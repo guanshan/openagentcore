@@ -4,7 +4,7 @@ import { InMemoryEventLog } from '../events/event-log.js';
 import { projectMessageHistory } from '../events/projection.js';
 import { assertSchemaValidEvent } from '../events/schema.test-support.js';
 import type { AgentEvent, JsonObject, JsonValue } from '../events/types.js';
-import { ScriptedModelPort, type ModelChunk } from '../ports/model.js';
+import { ModelPortError, ScriptedModelPort, type ModelChunk } from '../ports/model.js';
 import {
   type CheckpointDecision,
   type CheckpointStrategyInput,
@@ -601,6 +601,28 @@ describe('AgentLoop', () => {
         delta: { kind: 'text', text: 'Partial.' },
       }),
     );
+    await expectClosedAndSchemaValid(log, 'failed');
+  });
+
+  it('treats a content-filter finish as a non-retryable model failure', async () => {
+    const model = new ScriptedModelPort([[{ kind: 'finish', reason: 'content-filter' }]]);
+    const { loop, log } = createLoop(model);
+
+    let failure: unknown;
+    try {
+      await loop.runTurn({ content: 'Blocked request.' });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(ModelPortError);
+    expect(failure).toMatchObject({ kind: 'content-filter', retryable: false });
+    expect(model.requests).toHaveLength(1);
+    expect(loop.strategyMetrics()).toContainEqual({
+      kind: 'retry',
+      name: 'exponential-backoff',
+      metrics: { evaluations: 1, retries: 0, exhausted: 1 },
+    });
     await expectClosedAndSchemaValid(log, 'failed');
   });
 

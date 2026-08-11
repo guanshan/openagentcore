@@ -66,6 +66,49 @@ export interface ModelPort {
   countTokens(request: ModelRequest, signal: AbortSignal): Promise<number>;
 }
 
+export const MODEL_PORT_ERROR_KINDS = [
+  'authentication',
+  'rate-limit',
+  'timeout',
+  'service',
+  'content-filter',
+  'invalid-request',
+  'network',
+  'protocol',
+] as const;
+
+export type ModelPortErrorKind = (typeof MODEL_PORT_ERROR_KINDS)[number];
+
+export interface ModelPortErrorOptions {
+  readonly retryable: boolean;
+  readonly status?: number;
+  readonly retryAfterMs?: number;
+  readonly providerCode?: string;
+  readonly details?: JsonObject;
+  readonly cause?: unknown;
+}
+
+/** Provider-neutral failure metadata consumed by retry strategies and record/replay. */
+export class ModelPortError extends Error {
+  readonly kind: ModelPortErrorKind;
+  readonly retryable: boolean;
+  readonly status: number | undefined;
+  readonly retryAfterMs: number | undefined;
+  readonly providerCode: string | undefined;
+  readonly details: JsonObject | undefined;
+
+  constructor(kind: ModelPortErrorKind, message: string, options: ModelPortErrorOptions) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    this.name = 'ModelPortError';
+    this.kind = kind;
+    this.retryable = options.retryable;
+    this.status = options.status;
+    this.retryAfterMs = options.retryAfterMs;
+    this.providerCode = options.providerCode;
+    this.details = options.details === undefined ? undefined : structuredClone(options.details);
+  }
+}
+
 export interface ScriptedModelResponse {
   readonly chunks: readonly ModelChunk[];
   /** Raised after all chunks have been yielded, allowing deterministic interrupted-stream tests. */

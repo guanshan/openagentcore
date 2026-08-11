@@ -86,7 +86,12 @@ export type {
   PromptSourceSnapshot,
 } from './prompts/registry.js';
 
-export { ScriptedModelExhaustedError, ScriptedModelPort } from './ports/model.js';
+export {
+  MODEL_PORT_ERROR_KINDS,
+  ModelPortError,
+  ScriptedModelExhaustedError,
+  ScriptedModelPort,
+} from './ports/model.js';
 export type {
   FinishModelChunk,
   ModelCapabilities,
@@ -95,6 +100,8 @@ export type {
   ModelMessage,
   ModelMessageRole,
   ModelPort,
+  ModelPortErrorKind,
+  ModelPortErrorOptions,
   ModelRequest,
   ModelToolDefinition,
   ModelToolUse,

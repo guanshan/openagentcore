@@ -1,5 +1,11 @@
 import type { AgentEvent, JsonObject, JsonValue, ModelUsage, UserInput } from '../events/types.js';
-import type { ModelChunk, ModelRequest, ModelToolUse, ToolCallModelChunk } from '../ports/model.js';
+import {
+  ModelPortError,
+  type ModelChunk,
+  type ModelRequest,
+  type ModelToolUse,
+  type ToolCallModelChunk,
+} from '../ports/model.js';
 import type {
   PermissionStrategyInput,
   PermissionStrategyOutput,
@@ -478,23 +484,47 @@ async function callModel(
       outputTokens: 0,
       totalTokens: countedInputTokens,
     });
-    const iterator = runtime.model.stream(context.request, signal)[Symbol.asyncIterator]();
-    while (true) {
-      let next: IteratorResult<ModelChunk>;
-      try {
-        next = await iterator.next();
-      } catch (error) {
-        return { ok: false, error };
+    let iterator: AsyncIterator<ModelChunk>;
+    try {
+      iterator = runtime.model.stream(context.request, signal)[Symbol.asyncIterator]();
+    } catch (error) {
+      return { ok: false, error };
+    }
+    let completed = false;
+    try {
+      while (true) {
+        let next: IteratorResult<ModelChunk>;
+        try {
+          next = await iterator.next();
+        } catch (error) {
+          return { ok: false, error };
+        }
+        if (next.done) {
+          await flushPromptedText();
+          journal.assertComplete();
+          completed = true;
+          return { ok: true };
+        }
+        const chunk = next.value;
+        context.chunks.push(structuredClone(chunk));
+        recordedChunks += 1;
+        try {
+          await recordChunk(chunk);
+        } catch (error) {
+          if (error instanceof ModelPortError) {
+            return { ok: false, error };
+          }
+          throw error;
+        }
       }
-      if (next.done) {
-        await flushPromptedText();
-        journal.assertComplete();
-        return { ok: true };
+    } finally {
+      if (!completed) {
+        try {
+          await iterator.return?.();
+        } catch {
+          // Cleanup is best-effort and must not hide the model failure being handled.
+        }
       }
-      const chunk = next.value;
-      context.chunks.push(structuredClone(chunk));
-      await recordChunk(chunk);
-      recordedChunks += 1;
     }
   };
 
@@ -572,6 +602,20 @@ async function recordModelChunk(
       // Providers may send several snapshots; the last usage chunk is the step total.
       return { usage: structuredClone(chunk.usage) };
     case 'finish':
+      if (chunk.reason === 'content-filter') {
+        throw new ModelPortError(
+          'content-filter',
+          'Model response was blocked by content policy.',
+          {
+            retryable: false,
+          },
+        );
+      }
+      if (chunk.reason === 'error') {
+        throw new ModelPortError('service', 'Model stream finished with an error.', {
+          retryable: true,
+        });
+      }
       return {};
   }
 }
