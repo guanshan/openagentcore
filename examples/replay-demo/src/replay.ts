@@ -21,12 +21,17 @@ export async function runReplayDemo(
   const log = new InMemoryEventLog(identity);
   const snapshots = new InMemorySnapshotStore<MessageProjectionState>();
   const events = createDemoEvents();
+  const head = events.slice(0, 3);
 
-  for (const event of events.slice(0, 3)) {
+  for (const event of head) {
     await log.append(event);
   }
   let liveProjection = await projectMessageHistory(log.read(0));
-  await snapshots.save({ ...identity, lastSeq: 2, state: liveProjection });
+  const headEvent = head.at(-1);
+  if (headEvent === undefined) {
+    throw new Error('Replay demo requires at least one event before the snapshot.');
+  }
+  await snapshots.save({ ...identity, lastSeq: headEvent.seq, state: liveProjection });
 
   for (const event of events.slice(3)) {
     await log.append(event);
