@@ -107,6 +107,8 @@ export interface ToolCallEvent extends BaseAgentEvent<'tool.call'> {
   readonly tool: string;
   readonly args: JsonValue;
   readonly stepId?: string;
+  /** Completed model usage copied before tool side effects so recovery can close the step. */
+  readonly modelUsage?: ModelUsage;
 }
 
 export interface ToolResultEvent extends BaseAgentEvent<'tool.result'> {

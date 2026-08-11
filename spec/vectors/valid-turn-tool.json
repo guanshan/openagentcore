@@ -57,7 +57,13 @@
       "stepId": "step-1",
       "callId": "call-1",
       "tool": "read_file",
-      "args": { "path": "README.md" }
+      "args": { "path": "README.md" },
+      "modelUsage": {
+        "inputTokens": 10,
+        "outputTokens": 2,
+        "totalTokens": 12,
+        "cost": { "amount": 0.0012, "currency": "USD" }
+      }
     },
     {
       "type": "permission.requested",

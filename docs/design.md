@@ -147,7 +147,7 @@ type AgentEvent =
     }
   | { type: 'model.request'; stepId: string; assembled: ContextAssembly }
   | { type: 'model.delta'; stepId: string; delta: TextOrToolDelta }
-  | { type: 'tool.call'; callId: string; tool: string; args: unknown }
+  | { type: 'tool.call'; callId: string; tool: string; args: unknown; modelUsage?: ModelUsage }
   | { type: 'tool.result'; callId: string; result: ToolResult }
   | { type: 'permission.requested'; reqId: string; action: ActionDescriptor }
   | { type: 'permission.resolved'; reqId: string; decision: 'allow' | 'deny' }

@@ -249,7 +249,8 @@
             "callId": { "$ref": "#/$defs/nonEmptyString" },
             "tool": { "$ref": "#/$defs/nonEmptyString" },
             "args": { "$ref": "#/$defs/jsonValue" },
-            "stepId": { "$ref": "#/$defs/nonEmptyString" }
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "modelUsage": { "$ref": "#/$defs/modelUsage" }
           }
         }
       ],

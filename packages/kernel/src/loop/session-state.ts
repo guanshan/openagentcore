@@ -1,5 +1,11 @@
 import { ProjectionInvariantError } from '../events/projection.js';
-import type { ActionDescriptor, AgentEvent, JsonValue, UserInput } from '../events/types.js';
+import type {
+  ActionDescriptor,
+  AgentEvent,
+  JsonValue,
+  ModelUsage,
+  UserInput,
+} from '../events/types.js';
 
 export type SessionReplayStatus =
   'idle' | 'running' | 'waiting_approval' | 'done' | 'failed' | 'aborted';
@@ -79,6 +85,7 @@ export interface PendingToolCallState {
   readonly stepId?: string;
   readonly tool: string;
   readonly args: JsonValue;
+  readonly modelUsage?: ModelUsage;
   readonly calledAtSeq: number;
 }
 
@@ -276,6 +283,9 @@ export function applyEventToSessionState(
         ...(event.stepId === undefined ? {} : { stepId: event.stepId }),
         tool: event.tool,
         args: structuredClone(event.args),
+        ...(event.modelUsage === undefined
+          ? {}
+          : { modelUsage: structuredClone(event.modelUsage) }),
         calledAtSeq: event.seq,
       });
       break;
