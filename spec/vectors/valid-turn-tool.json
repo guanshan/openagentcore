@@ -1,0 +1,153 @@
+{
+  "description": "A complete framed turn with one approved tool call is valid.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-turn-tool"
+  },
+  "expected": "accepted",
+  "events": [
+    {
+      "type": "turn.started",
+      "seq": 0,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:00Z",
+      "turnId": "turn-1",
+      "input": { "content": "Read the file." }
+    },
+    {
+      "type": "step.started",
+      "seq": 1,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:01Z",
+      "turnId": "turn-1",
+      "stepId": "step-1",
+      "stepIndex": 1,
+      "injectedInputs": []
+    },
+    {
+      "type": "model.request",
+      "seq": 2,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:02Z",
+      "stepId": "step-1",
+      "requestId": "request-1",
+      "assembled": { "messageCount": 1 },
+      "toolUse": "prompted",
+      "capabilityDowngrades": ["tool-use:text-protocol"]
+    },
+    {
+      "type": "model.delta",
+      "seq": 3,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:03Z",
+      "stepId": "step-1",
+      "requestId": "request-1",
+      "delta": { "kind": "text", "text": "Reading." }
+    },
+    {
+      "type": "tool.call",
+      "seq": 4,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:04Z",
+      "stepId": "step-1",
+      "callId": "call-1",
+      "tool": "read_file",
+      "args": { "path": "README.md" },
+      "modelUsage": {
+        "inputTokens": 10,
+        "outputTokens": 2,
+        "totalTokens": 12,
+        "cost": { "amount": 0.0012, "currency": "USD" }
+      }
+    },
+    {
+      "type": "permission.requested",
+      "seq": 5,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:05Z",
+      "stepId": "step-1",
+      "callId": "call-1",
+      "reqId": "permission-1",
+      "action": { "kind": "tool", "tool": "read_file" },
+      "reason": "tool policy"
+    },
+    {
+      "type": "permission.resolved",
+      "seq": 6,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:06Z",
+      "stepId": "step-1",
+      "callId": "call-1",
+      "reqId": "permission-1",
+      "decision": "allow",
+      "reason": "read-only tool"
+    },
+    {
+      "type": "tool.result",
+      "seq": 7,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:07Z",
+      "stepId": "step-1",
+      "callId": "call-1",
+      "outcome": "succeeded",
+      "attempts": 1,
+      "result": { "content": "# OpenAgentCore" }
+    },
+    {
+      "type": "step.finished",
+      "seq": 8,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:08Z",
+      "turnId": "turn-1",
+      "stepId": "step-1",
+      "outcome": "succeeded",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 2,
+        "totalTokens": 12,
+        "cost": { "amount": 0.0012, "currency": "USD" }
+      }
+    },
+    {
+      "type": "compaction.applied",
+      "seq": 9,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:09Z",
+      "summary": "The file read was requested.",
+      "dropped": { "fromSeq": 0, "toSeq": 3 }
+    },
+    {
+      "type": "checkpoint.created",
+      "seq": 10,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:10Z",
+      "snapshotRef": "snapshot-1"
+    },
+    {
+      "type": "turn.finished",
+      "seq": 11,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:11Z",
+      "turnId": "turn-1",
+      "stopReason": "completed",
+      "usage": {
+        "inputTokens": 10,
+        "outputTokens": 2,
+        "totalTokens": 12,
+        "cost": { "amount": 0.0012, "currency": "USD" }
+      }
+    }
+  ]
+}

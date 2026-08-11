@@ -1,5 +1,5 @@
 {
-  "description": "A single-session stream containing every AgentEvent v0 variant is valid.",
+  "description": "A legacy M0-1 stream containing the original ten event variants remains valid.",
   "stream": {
     "tenantId": "tenant-demo",
     "sessionId": "session-complete"

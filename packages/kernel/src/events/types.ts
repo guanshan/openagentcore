@@ -8,6 +8,8 @@ export interface JsonObject {
 
 export type AgentEventType =
   | 'turn.started'
+  | 'step.started'
+  | 'step.finished'
   | 'model.request'
   | 'model.delta'
   | 'tool.call'
@@ -47,6 +49,18 @@ export interface EventRange {
 
 export type StopReason = string;
 
+export interface ModelCost {
+  readonly amount: number;
+  readonly currency: string;
+}
+
+export interface ModelUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+  readonly cost?: ModelCost;
+}
+
 interface BaseAgentEvent<TType extends AgentEventType> {
   readonly type: TType;
   readonly seq: number;
@@ -60,35 +74,66 @@ export interface TurnStartedEvent extends BaseAgentEvent<'turn.started'> {
   readonly input: UserInput;
 }
 
+export interface StepStartedEvent extends BaseAgentEvent<'step.started'> {
+  readonly turnId: string;
+  readonly stepId: string;
+  readonly stepIndex: number;
+  readonly injectedInputs: readonly UserInput[];
+}
+
+export interface StepFinishedEvent extends BaseAgentEvent<'step.finished'> {
+  readonly turnId: string;
+  readonly stepId: string;
+  readonly outcome: 'succeeded' | 'failed' | 'aborted';
+  readonly usage: ModelUsage;
+}
+
 export interface ModelRequestEvent extends BaseAgentEvent<'model.request'> {
   readonly stepId: string;
   readonly assembled: ContextAssembly;
+  readonly requestId?: string;
+  readonly toolUse?: 'native' | 'prompted' | 'none';
+  readonly capabilityDowngrades?: readonly string[];
 }
 
 export interface ModelDeltaEvent extends BaseAgentEvent<'model.delta'> {
   readonly stepId: string;
   readonly delta: TextOrToolDelta;
+  readonly requestId?: string;
 }
 
 export interface ToolCallEvent extends BaseAgentEvent<'tool.call'> {
   readonly callId: string;
   readonly tool: string;
   readonly args: JsonValue;
+  readonly stepId?: string;
+  /** Completed model usage copied before tool side effects so recovery can close the step. */
+  readonly modelUsage?: ModelUsage;
 }
 
 export interface ToolResultEvent extends BaseAgentEvent<'tool.result'> {
   readonly callId: string;
   readonly result: ToolResult;
+  readonly stepId?: string;
+  readonly outcome?: 'succeeded' | 'failed' | 'denied';
+  readonly error?: JsonValue;
+  readonly attempts?: number;
 }
 
 export interface PermissionRequestedEvent extends BaseAgentEvent<'permission.requested'> {
   readonly reqId: string;
   readonly action: ActionDescriptor;
+  readonly stepId?: string;
+  readonly callId?: string;
+  readonly reason?: string;
 }
 
 export interface PermissionResolvedEvent extends BaseAgentEvent<'permission.resolved'> {
   readonly reqId: string;
   readonly decision: 'allow' | 'deny';
+  readonly stepId?: string;
+  readonly callId?: string;
+  readonly reason?: string;
 }
 
 export interface CompactionAppliedEvent extends BaseAgentEvent<'compaction.applied'> {
@@ -103,10 +148,13 @@ export interface CheckpointCreatedEvent extends BaseAgentEvent<'checkpoint.creat
 export interface TurnFinishedEvent extends BaseAgentEvent<'turn.finished'> {
   readonly turnId: string;
   readonly stopReason: StopReason;
+  readonly usage?: ModelUsage;
 }
 
 export type AgentEvent =
   | TurnStartedEvent
+  | StepStartedEvent
+  | StepFinishedEvent
   | ModelRequestEvent
   | ModelDeltaEvent
   | ToolCallEvent

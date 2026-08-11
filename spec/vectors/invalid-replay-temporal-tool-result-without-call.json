@@ -1,0 +1,16 @@
+{
+  "description": "A tool result without a preceding tool call is rejected during replay.",
+  "stream": { "tenantId": "tenant-demo", "sessionId": "session-unmatched-result" },
+  "expected": "replay-rejected",
+  "events": [
+    {
+      "type": "tool.result",
+      "seq": 0,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-unmatched-result",
+      "ts": "2026-08-11T06:30:00Z",
+      "callId": "missing-call",
+      "result": null
+    }
+  ]
+}

@@ -70,7 +70,7 @@ Kernel 定义 **Port**（出站接口），Providers 提供 **Adapter**（实现
 interface ModelPort {
   readonly capabilities: ModelCapabilities; // 能力协商，见 §7.1
   stream(req: ModelRequest, signal: AbortSignal): AsyncIterable<ModelChunk>;
-  countTokens(req: ModelRequest): Promise<number>;
+  countTokens(req: ModelRequest, signal: AbortSignal): Promise<number>;
 }
 
 interface SandboxPort {
@@ -138,12 +138,26 @@ Tool / Skill / Connector / SubAgent ──注册于──> Registry
 ```ts
 type AgentEvent =
   | { type: 'turn.started'; turnId: string; input: UserInput }
+  | {
+      type: 'step.started';
+      turnId: string;
+      stepId: string;
+      stepIndex: number;
+      injectedInputs: readonly UserInput[];
+    }
   | { type: 'model.request'; stepId: string; assembled: ContextAssembly }
   | { type: 'model.delta'; stepId: string; delta: TextOrToolDelta }
-  | { type: 'tool.call'; callId: string; tool: string; args: unknown }
+  | { type: 'tool.call'; callId: string; tool: string; args: unknown; modelUsage?: ModelUsage }
   | { type: 'tool.result'; callId: string; result: ToolResult }
   | { type: 'permission.requested'; reqId: string; action: ActionDescriptor }
   | { type: 'permission.resolved'; reqId: string; decision: 'allow' | 'deny' }
+  | {
+      type: 'step.finished';
+      turnId: string;
+      stepId: string;
+      outcome: StepOutcome;
+      usage: Usage;
+    }
   | { type: 'compaction.applied'; summary: string; dropped: EventRange }
   | { type: 'checkpoint.created'; snapshotRef: string }
   | { type: 'turn.finished'; turnId: string; stopReason: StopReason };
@@ -183,7 +197,7 @@ abstract class AgentLoop {
 }
 ```
 
-**可打断性（Steering）是循环的内建属性**：事件循环每步检查注入队列，用户消息可在 Turn 中途插入，`AbortSignal` 贯穿所有 Port 调用。这一点无法后补，必须在骨架里。
+**可打断性（Steering）是循环的内建属性**：事件循环在每个安全点检查注入队列；该步接收的用户消息随 `step.started.injectedInputs` 在同一个事件中原子持久化，后续 context 只读取已持久化输入。`AbortSignal` 贯穿所有 Port 调用。这一点无法后补，必须在骨架里。
 
 ### 4.3 Session 状态机（State 模式）
 

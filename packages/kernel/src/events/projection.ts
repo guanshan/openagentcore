@@ -7,6 +7,7 @@ interface UserMessageProjectionEntry {
   readonly role: 'user';
   readonly content: string;
   readonly sourceSeq: number;
+  readonly inputIndex?: number;
 }
 
 interface AssistantMessageProjectionEntry {
@@ -143,6 +144,18 @@ function applyEventToEntries(entries: MessageProjectionEntry[], event: AgentEven
       });
       return true;
 
+    case 'step.started':
+      event.injectedInputs.forEach((input, inputIndex) => {
+        entries.push({
+          kind: 'message',
+          role: 'user',
+          content: input.content,
+          sourceSeq: event.seq,
+          inputIndex,
+        });
+      });
+      return event.injectedInputs.length > 0;
+
     case 'model.delta':
       if (event.delta.kind === 'text') {
         entries.push({
@@ -180,6 +193,7 @@ function applyEventToEntries(entries: MessageProjectionEntry[], event: AgentEven
       return true;
 
     case 'model.request':
+    case 'step.finished':
     case 'permission.requested':
     case 'permission.resolved':
     case 'checkpoint.created':
@@ -402,7 +416,8 @@ function validateMessageProjectionState(state: MessageProjectionState): void {
 
 function validateMessageProjectionEntries(entries: readonly MessageProjectionEntry[]): void {
   let previousPosition = -1;
-  const sourceSeqs = new Set<number>();
+  const sourceKinds = new Map<number, 'event' | 'injected-input'>();
+  const sourceKeys = new Set<string>();
 
   for (let index = 0; index < entries.length; index += 1) {
     if (!Object.hasOwn(entries, index)) {
@@ -421,12 +436,33 @@ function validateMessageProjectionEntries(entries: readonly MessageProjectionEnt
         `Projection entry at index ${index} must have a non-negative integer sourceSeq.`,
       );
     }
-    if (sourceSeqs.has(entry.sourceSeq)) {
+    const isInjectedInput =
+      entry.kind === 'message' && entry.role === 'user' && entry.inputIndex !== undefined;
+    if (isInjectedInput && (!Number.isInteger(entry.inputIndex) || entry.inputIndex < 0)) {
       throw new ProjectionInvariantError(
-        `Projection entries must have unique sourceSeq values; received ${entry.sourceSeq} twice.`,
+        `Injected input projection entry at index ${index} must have a non-negative integer inputIndex.`,
       );
     }
-    sourceSeqs.add(entry.sourceSeq);
+    const sourceKind = isInjectedInput ? 'injected-input' : 'event';
+    const previousSourceKind = sourceKinds.get(entry.sourceSeq);
+    if (
+      previousSourceKind !== undefined &&
+      (sourceKind === 'event' || previousSourceKind === 'event')
+    ) {
+      throw new ProjectionInvariantError(
+        `Projection entries must have unique event sourceSeq values; received ${entry.sourceSeq} twice.`,
+      );
+    }
+    sourceKinds.set(entry.sourceSeq, sourceKind);
+    const sourceKey = isInjectedInput
+      ? `${entry.sourceSeq}:input:${entry.inputIndex}`
+      : `${entry.sourceSeq}:event`;
+    if (sourceKeys.has(sourceKey)) {
+      throw new ProjectionInvariantError(
+        `Projection entries contain duplicate source ${sourceKey}.`,
+      );
+    }
+    sourceKeys.add(sourceKey);
 
     switch (entry.kind) {
       case 'message':

@@ -1,0 +1,41 @@
+{
+  "description": "A framed stream ending with an unfinished tool call is a valid recovery prefix.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-incomplete-tool"
+  },
+  "expected": "accepted",
+  "events": [
+    {
+      "type": "turn.started",
+      "seq": 0,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-incomplete-tool",
+      "ts": "2026-08-11T06:20:00Z",
+      "turnId": "turn-1",
+      "input": { "content": "Run the tool." }
+    },
+    {
+      "type": "step.started",
+      "seq": 1,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-incomplete-tool",
+      "ts": "2026-08-11T06:20:01Z",
+      "turnId": "turn-1",
+      "stepId": "step-1",
+      "stepIndex": 1,
+      "injectedInputs": []
+    },
+    {
+      "type": "tool.call",
+      "seq": 2,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-incomplete-tool",
+      "ts": "2026-08-11T06:20:02Z",
+      "stepId": "step-1",
+      "callId": "call-1",
+      "tool": "slow_tool",
+      "args": null
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "description": "A complete framed turn with steering input and no tool calls is valid.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-turn-no-tools"
+  },
+  "expected": "accepted",
+  "events": [
+    {
+      "type": "turn.started",
+      "seq": 0,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-no-tools",
+      "ts": "2026-08-11T06:10:00Z",
+      "turnId": "turn-1",
+      "input": { "content": "Initial input." }
+    },
+    {
+      "type": "step.started",
+      "seq": 1,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-no-tools",
+      "ts": "2026-08-11T06:10:01Z",
+      "turnId": "turn-1",
+      "stepId": "step-1",
+      "stepIndex": 1,
+      "injectedInputs": [{ "content": "Steering input." }]
+    },
+    {
+      "type": "model.request",
+      "seq": 2,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-no-tools",
+      "ts": "2026-08-11T06:10:02Z",
+      "stepId": "step-1",
+      "assembled": { "messageCount": 2 },
+      "toolUse": "none"
+    },
+    {
+      "type": "model.delta",
+      "seq": 3,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-no-tools",
+      "ts": "2026-08-11T06:10:03Z",
+      "stepId": "step-1",
+      "delta": { "kind": "text", "text": "Done." }
+    },
+    {
+      "type": "step.finished",
+      "seq": 4,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-no-tools",
+      "ts": "2026-08-11T06:10:04Z",
+      "turnId": "turn-1",
+      "stepId": "step-1",
+      "outcome": "succeeded",
+      "usage": { "inputTokens": 4, "outputTokens": 1, "totalTokens": 5 }
+    },
+    {
+      "type": "turn.finished",
+      "seq": 5,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-no-tools",
+      "ts": "2026-08-11T06:10:05Z",
+      "turnId": "turn-1",
+      "stopReason": "completed",
+      "usage": { "inputTokens": 4, "outputTokens": 1, "totalTokens": 5 }
+    }
+  ]
+}

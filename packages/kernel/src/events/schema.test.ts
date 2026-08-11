@@ -13,6 +13,7 @@ import {
 } from './projection.js';
 import { agentEventSchemaId, createSpecAjv } from './schema.test-support.js';
 import type { AgentEvent, AgentEventType, Trajectory } from './types.js';
+import { projectSessionState } from '../loop/session-state.js';
 
 const specDirectory = fileURLToPath(new URL('../../../../spec/', import.meta.url));
 const vectorDirectory = fileURLToPath(new URL('../../../../spec/vectors/', import.meta.url));
@@ -73,6 +74,7 @@ describe('AgentEvent v0 schema', () => {
 
     let replayError: unknown;
     try {
+      await projectSessionState(log.read(0));
       const projection = await projectMessageHistory(log.read(0));
       materializeMessageHistory(projection);
     } catch (error) {
@@ -95,8 +97,26 @@ describe('AgentEvent v0 schema', () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
-  it('covers all ten event variants with schema-valid fixtures', () => {
-    const complete = vectors.find((vector) => vector.fileName === 'valid-complete-event-set.json');
+  it('covers at least two complete framed turns', () => {
+    expect(
+      vectors.filter(
+        (vector) => vector.fileName.startsWith('valid-turn-') && vector.expected === 'accepted',
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('covers at least three replay-rejected temporal invariants', () => {
+    expect(
+      vectors.filter(
+        (vector) =>
+          vector.fileName.startsWith('invalid-replay-temporal-') &&
+          vector.expected === 'replay-rejected',
+      ).length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it('covers all twelve event variants with schema-valid fixtures', () => {
+    const complete = vectors.find((vector) => vector.fileName === 'valid-turn-tool.json');
     expect(complete).toBeDefined();
     if (complete === undefined) {
       throw new Error('Missing complete event-set vector.');
@@ -108,6 +128,8 @@ describe('AgentEvent v0 schema', () => {
     expect(actualTypes).toEqual(
       new Set<AgentEventType>([
         'turn.started',
+        'step.started',
+        'step.finished',
         'model.request',
         'model.delta',
         'tool.call',
@@ -120,6 +142,21 @@ describe('AgentEvent v0 schema', () => {
       ]),
     );
     expect(complete.events.every((event) => validateEvent(event))).toBe(true);
+  });
+
+  it('projects injected steering inputs into message history', async () => {
+    const vector = vectors.find((candidate) => candidate.fileName === 'valid-turn-no-tools.json');
+    if (vector === undefined) {
+      throw new Error('Missing no-tools turn vector.');
+    }
+
+    const projection = await projectMessageHistory(vector.events as readonly AgentEvent[]);
+    expect(materializeMessageHistory(projection)).toContainEqual({
+      kind: 'message',
+      role: 'user',
+      content: 'Steering input.',
+      sourceSeqs: [1],
+    });
   });
 });
 

@@ -42,4 +42,4 @@ jobs:
         run: pnpm build
 
       - name: Run examples
-        run: pnpm example:replay
+        run: pnpm examples
