@@ -174,6 +174,10 @@ function applyEventToEntries(entries: MessageProjectionEntry[], event: AgentEven
       }
       return false;
 
+    case 'model.attempt.discarded':
+      applyModelAttemptDiscard(entries, event.seq, event.stepId, event.discarded);
+      return true;
+
     case 'tool.call':
       entries.push({
         kind: 'tool-call',
@@ -248,26 +252,21 @@ function applyCompaction(
   dropped: EventRange,
   strategy: string | undefined,
 ): void {
-  if (
-    !Number.isInteger(dropped.fromSeq) ||
-    !Number.isInteger(dropped.toSeq) ||
-    dropped.fromSeq < 0 ||
-    dropped.fromSeq > dropped.toSeq ||
-    dropped.toSeq >= compactionSeq
-  ) {
+  if (!isPastEventRange(dropped, compactionSeq)) {
     throw new ProjectionInvariantError(
       `Compaction range must satisfy 0 <= fromSeq <= toSeq < event seq; received ${dropped.fromSeq}..${dropped.toSeq} at ${compactionSeq}.`,
     );
   }
 
   const removedSummaries: SummaryProjectionEntry[] = [];
-  const droppedIndexes = new Set<number>();
+  const droppedIndexes = collectProjectionRangeIndexes(
+    entries,
+    dropped,
+    (entry) => entry.kind !== 'summary',
+  );
 
   entries.forEach((entry, index) => {
     if (entry.kind !== 'summary') {
-      if (containsSeq(dropped, entry.sourceSeq)) {
-        droppedIndexes.add(index);
-      }
       return;
     }
 
@@ -290,13 +289,12 @@ function applyCompaction(
 
   assertContiguousContentCoverage(entries, droppedIndexes, dropped);
 
-  const retained = entries.filter((_, index) => !droppedIndexes.has(index));
+  const removed = removeProjectionEntries(entries, droppedIndexes);
+  const retained = [...entries];
   const contentRanges = requireNonEmptyRanges(
     normalizeRanges([
-      ...entries.flatMap((entry, index) =>
-        droppedIndexes.has(index) && entry.kind !== 'summary'
-          ? [{ fromSeq: entry.sourceSeq, toSeq: entry.sourceSeq }]
-          : [],
+      ...removed.flatMap((entry) =>
+        entry.kind !== 'summary' ? [{ fromSeq: entry.sourceSeq, toSeq: entry.sourceSeq }] : [],
       ),
       ...removedSummaries.flatMap((entry) => entry.contentRanges),
     ]),
@@ -324,6 +322,48 @@ function applyCompaction(
   entries.splice(0, entries.length, ...retained);
 }
 
+function applyModelAttemptDiscard(
+  entries: MessageProjectionEntry[],
+  discardSeq: number,
+  stepId: string,
+  discarded: EventRange,
+): void {
+  if (!isPastEventRange(discarded, discardSeq)) {
+    throw new ProjectionInvariantError(
+      `Model attempt discard range must satisfy 0 <= fromSeq <= toSeq < event seq; received ${discarded.fromSeq}..${discarded.toSeq} at ${discardSeq}.`,
+    );
+  }
+  const indexes = collectProjectionRangeIndexes(
+    entries,
+    discarded,
+    (entry) => entry.kind === 'message' && entry.role === 'assistant' && entry.stepId === stepId,
+  );
+  removeProjectionEntries(entries, indexes);
+}
+
+function collectProjectionRangeIndexes(
+  entries: readonly MessageProjectionEntry[],
+  range: EventRange,
+  select: (entry: MessageProjectionEntry) => boolean,
+): Set<number> {
+  const indexes = new Set<number>();
+  entries.forEach((entry, index) => {
+    if (select(entry) && containsSeq(range, entry.sourceSeq)) {
+      indexes.add(index);
+    }
+  });
+  return indexes;
+}
+
+function removeProjectionEntries(
+  entries: MessageProjectionEntry[],
+  indexes: ReadonlySet<number>,
+): MessageProjectionEntry[] {
+  const removed = entries.filter((_, index) => indexes.has(index));
+  entries.splice(0, entries.length, ...entries.filter((_, index) => !indexes.has(index)));
+  return removed;
+}
+
 function finalizeMessageProjection(entries: MessageProjectionEntry[]): MessageProjectionState {
   validateMessageProjectionEntries(entries);
   return deepFreeze({ entries });
@@ -337,6 +377,10 @@ function projectionPosition(entry: MessageProjectionEntry): number {
 
 function containsSeq(range: EventRange, seq: number): boolean {
   return seq >= range.fromSeq && seq <= range.toSeq;
+}
+
+function isPastEventRange(range: EventRange, eventSeq: number): boolean {
+  return isValidEventRange(range) && range.toSeq < eventSeq;
 }
 
 function containsRange(container: EventRange, candidate: EventRange): boolean {

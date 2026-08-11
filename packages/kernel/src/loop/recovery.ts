@@ -3,6 +3,7 @@ import type { PendingToolCallState, SessionReplayState } from './session-state.j
 import { runMemoryPipeline } from './context.js';
 import {
   AgentLoopInvariantError,
+  activeModelDeltas,
   emitDeniedToolResult,
   emitToolFailure,
   EMPTY_MODEL_USAGE,
@@ -245,8 +246,10 @@ async function reconcilePersistedToolBatch(
   const persistedCallIds = new Set(calls.map((call) => call.callId));
   const batchUsage = [...calls].reverse().find((call) => call.modelUsage !== undefined)?.modelUsage;
   const modelCallIds = new Set<string>();
-  for (const event of events) {
-    if (event.type !== 'model.delta' || event.delta.kind !== 'tool') {
+  const requestId = events.find((event) => event.type === 'model.request')?.requestId;
+  const activeDeltas = activeModelDeltas(events, requestId ?? `${stepId}:request`);
+  for (const event of activeDeltas) {
+    if (event.delta.kind !== 'tool') {
       continue;
     }
     const call = recordedToolCall(event.delta.toolCallDelta);

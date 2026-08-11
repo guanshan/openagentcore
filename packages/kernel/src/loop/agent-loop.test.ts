@@ -686,7 +686,7 @@ describe('AgentLoop', () => {
         { kind: 'finish', reason: 'stop' },
       ],
     ]);
-    const { loop, log } = createLoop(model);
+    const { loop, log } = createLoop(model, { modelStreamRetryMode: 'strict-prefix' });
 
     const result = await loop.runTurn({ content: 'Retry the model.' });
 
@@ -717,6 +717,45 @@ describe('AgentLoop', () => {
         event.type === 'model.delta' && event.delta.kind === 'text' ? [event.delta.text] : [],
       ),
     ).toEqual(['Par', 'tial ', 'answer.']);
+    await expectClosedAndSchemaValid(log, 'done');
+  });
+
+  it('discards a divergent partial attempt and completes the turn by default', async () => {
+    const model = new ScriptedModelPort([
+      {
+        chunks: [{ kind: 'text', text: 'The answer is ' }],
+        error: new Error('connection reset'),
+      },
+      [
+        { kind: 'text', text: 'The answer would be 42.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
+    const { loop, log } = createLoop(model);
+
+    const result = await loop.runTurn({ content: 'Answer the question.' });
+
+    expect(result.stopReason).toBe('completed');
+    expect(result.history).toContainEqual(
+      expect.objectContaining({
+        kind: 'message',
+        role: 'assistant',
+        content: 'The answer would be 42.',
+      }),
+    );
+    const events = await readEvents(log);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.attempt.discarded',
+        reason: 'provider-failure',
+        discarded: { fromSeq: 3, toSeq: 3 },
+      }),
+    );
+    expect(
+      events.flatMap((event) =>
+        event.type === 'model.delta' && event.delta.kind === 'text' ? [event.delta.text] : [],
+      ),
+    ).toEqual(['The answer is ', 'The answer would be 42.']);
     await expectClosedAndSchemaValid(log, 'done');
   });
 
@@ -815,6 +854,7 @@ describe('AgentLoop', () => {
     ]);
     const { loop } = createLoop(model, {
       tools: new ToolRegistry().register(tool),
+      modelStreamRetryMode: 'strict-prefix',
     });
 
     const result = await loop.runTurn({ content: 'Use both calls.' });
@@ -847,6 +887,7 @@ describe('AgentLoop', () => {
     ]);
     const { loop } = createLoop(model, {
       tools: new ToolRegistry().register(tool),
+      modelStreamRetryMode: 'strict-prefix',
     });
 
     await expect(loop.runTurn({ content: 'Keep the call stable.' })).rejects.toBeInstanceOf(
@@ -862,7 +903,7 @@ describe('AgentLoop', () => {
     });
   });
 
-  it('resumes an interrupted model-only step from its persisted request and delta prefix', async () => {
+  it('resumes an interrupted model-only step by discarding its persisted delta prefix', async () => {
     const crash = new AgentLoopCrashError('model process lost');
     const log = new InMemoryEventLog(identity('model-crash'));
     const firstModel = new ScriptedModelPort([
@@ -903,6 +944,12 @@ describe('AgentLoop', () => {
       expect.objectContaining({ role: 'assistant', content: 'Partial.' }),
     );
     expect(result.events.filter((event) => event.type === 'model.request')).toHaveLength(1);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'model.attempt.discarded',
+        reason: 'recovery',
+      }),
+    );
     const requestEvent = result.events.find((event) => event.type === 'model.request');
     expect(
       result.events
@@ -1220,6 +1267,9 @@ interface LoopOverrides {
   readonly tools?: ToolRegistry;
   readonly strategyRegistry?: ReturnType<typeof createDefaultStrategyRegistry>;
   readonly strategies?: ConstructorParameters<typeof AgentLoop>[0]['strategies'];
+  readonly modelStreamRetryMode?: ConstructorParameters<
+    typeof AgentLoop
+  >[0]['modelStreamRetryMode'];
 }
 
 function createLoop(model: ScriptedModelPort, overrides: LoopOverrides = {}) {
@@ -1232,6 +1282,9 @@ function createLoop(model: ScriptedModelPort, overrides: LoopOverrides = {}) {
       ? {}
       : { strategyRegistry: overrides.strategyRegistry }),
     ...(overrides.strategies === undefined ? {} : { strategies: overrides.strategies }),
+    ...(overrides.modelStreamRetryMode === undefined
+      ? {}
+      : { modelStreamRetryMode: overrides.modelStreamRetryMode }),
     now: () => timestamp,
     sleep: async (_delayMs, signal) => signal.throwIfAborted(),
   });

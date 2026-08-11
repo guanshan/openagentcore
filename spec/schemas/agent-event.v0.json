@@ -8,6 +8,7 @@
     { "$ref": "#/$defs/stepFinished" },
     { "$ref": "#/$defs/modelRequest" },
     { "$ref": "#/$defs/modelDelta" },
+    { "$ref": "#/$defs/modelAttemptDiscarded" },
     { "$ref": "#/$defs/toolCall" },
     { "$ref": "#/$defs/toolResult" },
     { "$ref": "#/$defs/permissionRequested" },
@@ -214,6 +215,9 @@
             "capabilityDowngrades": {
               "type": "array",
               "items": { "$ref": "#/$defs/nonEmptyString" }
+            },
+            "retryMode": {
+              "enum": ["discard", "strict-prefix"]
             }
           }
         }
@@ -232,6 +236,26 @@
             "stepId": { "$ref": "#/$defs/nonEmptyString" },
             "delta": { "$ref": "#/$defs/textOrToolDelta" },
             "requestId": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "modelAttemptDiscarded": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["stepId", "requestId", "discarded", "reason"],
+          "properties": {
+            "type": { "const": "model.attempt.discarded" },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "requestId": { "$ref": "#/$defs/nonEmptyString" },
+            "discarded": { "$ref": "#/$defs/eventRange" },
+            "reason": {
+              "enum": ["provider-failure", "recovery"]
+            }
           }
         }
       ],
