@@ -19,7 +19,9 @@
     "baseUrl": ".",
     "ignoreDeprecations": "6.0",
     "paths": {
-      "@openagentcore/kernel": ["packages/kernel/src/index.ts"]
+      "@openagentcore/kernel": ["packages/kernel/src/index.ts"],
+      "@openagentcore/standard": ["providers/standard/src/index.ts"],
+      "@openagentcore/standard/model": ["providers/standard/src/model/index.ts"]
     }
   }
 }
