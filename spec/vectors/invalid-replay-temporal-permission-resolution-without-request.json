@@ -1,0 +1,16 @@
+{
+  "description": "A permission resolution without a preceding request is rejected during replay.",
+  "stream": { "tenantId": "tenant-demo", "sessionId": "session-unmatched-permission" },
+  "expected": "replay-rejected",
+  "events": [
+    {
+      "type": "permission.resolved",
+      "seq": 0,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-unmatched-permission",
+      "ts": "2026-08-11T06:32:00Z",
+      "reqId": "missing-request",
+      "decision": "allow"
+    }
+  ]
+}
