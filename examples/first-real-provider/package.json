@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "live": "pnpm run build && node dist/live.js",
+    "live": "node dist/live.js",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

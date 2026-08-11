@@ -38,3 +38,4 @@ M0 只使用 `ScriptedModelPort`，因此若干内核假设尚未经过真实模
 7. 调用方取消只有在 Replay 收到对应 AbortSignal 时才能等价重现；离线回放不能自行伪造 caller cancellation，否则 Kernel 会错误进入 retry。
 8. `streaming`、`maxContext`、`vision` 等能力目前除 `toolUse` 外尚未全部参与 Kernel 的自动降级与事件记录。
 9. §14 设想由 L0 Schema 定义跨语言共享配置；本次只实现了 TypeScript 组合根的运行时校验，尚未形成 `agent-config` Schema 与一致性向量。后续需先统一配置契约，再扩展 Python 组合根，避免各语言重复校验并发生规则漂移。
+10. SSE 内联错误缺少 HTTP 状态时，只能按稳定 `type` / `code` 识别已知分类；无法分类的错误当前按可重试 service failure 处理。后续协议是否需要显式携带端点原始分类与置信度，尚未决定。

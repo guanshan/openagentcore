@@ -108,6 +108,6 @@ const agent = AgentBuilder.fromPreset('oss-local')
 
 ## 离线与实机验证
 
-常规测试只使用注入 transport、录制 fixture 与 `127.0.0.1` 随机端口 mock server，不访问真实端点。三行 Facade 示例及显式实机入口位于 [`examples/first-real-provider`](../../examples/first-real-provider)。实机入口只有在手动执行 `pnpm --filter @openagentcore/first-real-provider live` 且设置 `OAC_RUN_LIVE=1` 时运行。
+常规测试只使用注入 transport、录制 fixture 与 `127.0.0.1` 随机端口 mock server，不访问真实端点。三行 Facade 示例及显式实机入口位于 [`examples/first-real-provider`](../../examples/first-real-provider)。实机入口只按该示例 README 的两步命令手动执行，并要求显式设置 `OAC_RUN_LIVE=1`。
 
 真实模型与 Kernel 之间尚未解决的边界见 [ADR 0007](../../docs/adr/0007-first-real-model-boundary.md)。

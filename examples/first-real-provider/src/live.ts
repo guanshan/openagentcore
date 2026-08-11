@@ -46,7 +46,10 @@ if (!original.events.some((event) => event.type === 'tool.result')) {
   throw new Error('The live endpoint did not complete the required tool call.');
 }
 
-console.log(JSON.stringify({ originalEvents: original.events, recording }, null, 2));
+console.error(
+  `Live ${toolUse} turn and deterministic replay completed with ${original.events.length} events.`,
+);
+console.log(JSON.stringify(recording, null, 2));
 
 function createLiveAgent(model: ModelPort) {
   return AgentBuilder.fromPreset('oss-local')
