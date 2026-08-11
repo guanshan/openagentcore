@@ -10,24 +10,14 @@ import {
   type ModelRequest,
 } from '@openagentcore/kernel';
 
+import { MAX_TIMER_DELAY_MS } from './limits.js';
+import { authorizationCredential, MODEL_SENSITIVE_KEYS } from './sensitive.js';
+
 export const MODEL_RECORDING_SPEC_VERSION = '0.4.0' as const;
 export const MODEL_RECORDING_KIND = 'model-port-recording' as const;
 export const MODEL_RECORDING_REDACTION = '[REDACTED]' as const;
 
-export const MODEL_RECORDING_SENSITIVE_KEYS = [
-  'access-token',
-  'access_token',
-  'accesstoken',
-  'api-key',
-  'api_key',
-  'apikey',
-  'authorization',
-  'cookie',
-  'proxy-authorization',
-  'set-cookie',
-  'x-api-key',
-  'x_api_key',
-] as const;
+export const MODEL_RECORDING_SENSITIVE_KEYS = MODEL_SENSITIVE_KEYS;
 
 export interface ModelRecordingRedaction {
   readonly replacement: typeof MODEL_RECORDING_REDACTION;
@@ -526,12 +516,14 @@ export function assertModelRecording(recording: unknown): asserts recording is M
     fail('/redaction/replacement', `expected ${MODEL_RECORDING_REDACTION}`);
   }
   const sensitiveKeys = expectStringArray(redaction['sensitiveKeys'], '/redaction/sensitiveKeys');
+  expectUniqueStrings(sensitiveKeys, '/redaction/sensitiveKeys');
   for (const [index, key] of sensitiveKeys.entries()) {
     if (key.length === 0) {
       fail(`/redaction/sensitiveKeys/${index}`, 'must not be empty');
     }
   }
   const pointers = expectStringArray(redaction['pointers'], '/redaction/pointers');
+  expectUniqueStrings(pointers, '/redaction/pointers');
   for (const [index, pointer] of pointers.entries()) {
     try {
       parseJsonPointer(pointer);
@@ -591,16 +583,88 @@ function validateRequest(candidate: unknown, path: string): void {
       fail(`${path}/${required}`, 'is required');
     }
   }
-  if (!Array.isArray(request['messages'])) {
+  const messages = request['messages'];
+  if (!Array.isArray(messages)) {
     fail(`${path}/messages`, 'must be an array');
   }
-  if (!Array.isArray(request['tools'])) {
+  for (const [index, message] of messages.entries()) {
+    validateMessage(message, `${path}/messages/${index}`);
+  }
+  const tools = request['tools'];
+  if (!Array.isArray(tools)) {
     fail(`${path}/tools`, 'must be an array');
   }
-  if (!['native', 'prompted', 'none'].includes(String(request['toolUse']))) {
+  for (const [index, tool] of tools.entries()) {
+    validateToolDefinition(tool, `${path}/tools/${index}`);
+  }
+  if (
+    request['toolUse'] !== 'native' &&
+    request['toolUse'] !== 'prompted' &&
+    request['toolUse'] !== 'none'
+  ) {
     fail(`${path}/toolUse`, 'must be native, prompted, or none');
   }
-  assertJsonValue(request, path);
+  if (request['metadata'] !== undefined) {
+    expectObject(request['metadata'], `${path}/metadata`);
+    assertJsonValue(request['metadata'], `${path}/metadata`);
+  }
+}
+
+function validateMessage(candidate: unknown, path: string): void {
+  const message = expectObject(candidate, path);
+  expectAllowedKeys(message, ['role', 'content', 'name', 'toolCallId', 'toolCalls'], path);
+  for (const required of ['role', 'content']) {
+    if (!(required in message)) fail(`${path}/${required}`, 'is required');
+  }
+  if (
+    message['role'] !== 'system' &&
+    message['role'] !== 'user' &&
+    message['role'] !== 'assistant' &&
+    message['role'] !== 'tool'
+  ) {
+    fail(`${path}/role`, 'must be system, user, assistant, or tool');
+  }
+  if (typeof message['content'] !== 'string') {
+    fail(`${path}/content`, 'must be a string');
+  }
+  for (const optional of ['name', 'toolCallId']) {
+    if (message[optional] !== undefined && typeof message[optional] !== 'string') {
+      fail(`${path}/${optional}`, 'must be a string');
+    }
+  }
+  if (message['toolCalls'] !== undefined) {
+    if (!Array.isArray(message['toolCalls'])) {
+      fail(`${path}/toolCalls`, 'must be an array');
+    }
+    for (const [index, call] of message['toolCalls'].entries()) {
+      const callPath = `${path}/toolCalls/${index}`;
+      const toolCall = expectObject(call, callPath);
+      expectExactKeys(toolCall, ['callId', 'tool', 'args'], callPath);
+      if (typeof toolCall['callId'] !== 'string') {
+        fail(`${callPath}/callId`, 'must be a string');
+      }
+      if (typeof toolCall['tool'] !== 'string') {
+        fail(`${callPath}/tool`, 'must be a string');
+      }
+      assertJsonValue(toolCall['args'], `${callPath}/args`);
+    }
+  }
+}
+
+function validateToolDefinition(candidate: unknown, path: string): void {
+  const tool = expectObject(candidate, path);
+  expectAllowedKeys(tool, ['name', 'description', 'inputSchema'], path);
+  for (const required of ['name', 'inputSchema']) {
+    if (!(required in tool)) fail(`${path}/${required}`, 'is required');
+  }
+  if (typeof tool['name'] !== 'string') {
+    fail(`${path}/name`, 'must be a string');
+  }
+  if (tool['description'] !== undefined && typeof tool['description'] !== 'string') {
+    fail(`${path}/description`, 'must be a string');
+  }
+  expectObject(tool['inputSchema'], `${path}/inputSchema`);
+  assertJsonValue(tool['inputSchema'], `${path}/inputSchema`);
 }
 
 function validateTokenOutcome(candidate: unknown, path: string): void {
@@ -681,7 +745,7 @@ function validateChunk(candidate: unknown, path: string): void {
       break;
     case 'usage':
       expectExactKeys(chunk, ['kind', 'usage'], path);
-      assertJsonValue(chunk['usage'], `${path}/usage`);
+      validateUsage(chunk['usage'], `${path}/usage`);
       break;
     case 'finish':
       expectExactKeys(chunk, ['kind', 'reason'], path);
@@ -695,6 +759,24 @@ function validateChunk(candidate: unknown, path: string): void {
       break;
     default:
       fail(`${path}/kind`, 'has an unsupported model chunk kind');
+  }
+}
+
+function validateUsage(candidate: unknown, path: string): void {
+  const usage = expectObject(candidate, path);
+  expectAllowedKeys(usage, ['inputTokens', 'outputTokens', 'totalTokens', 'cost'], path);
+  for (const required of ['inputTokens', 'outputTokens', 'totalTokens']) {
+    if (!(required in usage)) fail(`${path}/${required}`, 'is required');
+    expectNonnegativeInteger(usage[required], `${path}/${required}`);
+  }
+  if (usage['cost'] !== undefined) {
+    const costPath = `${path}/cost`;
+    const cost = expectObject(usage['cost'], costPath);
+    expectExactKeys(cost, ['amount', 'currency'], costPath);
+    expectNonnegativeNumber(cost['amount'], `${costPath}/amount`);
+    if (typeof cost['currency'] !== 'string' || cost['currency'].length === 0) {
+      fail(`${costPath}/currency`, 'must be a non-empty string');
+    }
   }
 }
 
@@ -839,6 +921,12 @@ function redactSensitiveKeys(value: JsonValue, context: RedactionContext): JsonV
     for (const [key, nested] of Object.entries(value)) {
       if (context.sensitiveKeys.has(key.toLowerCase())) {
         collectSecretStrings(nested, context.secrets);
+        if (typeof nested === 'string' && key.toLowerCase().includes('authorization')) {
+          const credential = authorizationCredential(nested);
+          if (credential !== undefined) {
+            context.secrets.add(credential);
+          }
+        }
         Object.defineProperty(result, key, {
           value: MODEL_RECORDING_REDACTION,
           enumerable: true,
@@ -938,7 +1026,8 @@ function collectSecretStrings(value: JsonValue, secrets: Set<string>): void {
 
 function sanitizeText(text: string, secrets: ReadonlySet<string>): string {
   let sanitized = text;
-  for (const secret of secrets) {
+  const longestFirst = [...secrets].sort((left, right) => right.length - left.length);
+  for (const secret of longestFirst) {
     sanitized = sanitized.split(secret).join(MODEL_RECORDING_REDACTION);
   }
   return sanitized
@@ -975,6 +1064,21 @@ function defaultNow(): number {
 
 async function defaultSleep(delayMs: number, signal: AbortSignal): Promise<void> {
   signal.throwIfAborted();
+  if (!Number.isFinite(delayMs) || delayMs < 0) {
+    throw new ModelRecordingInvariantError(
+      `Replay delay must be a finite non-negative number, received ${String(delayMs)}.`,
+    );
+  }
+  let remaining = delayMs;
+  while (remaining > 0) {
+    signal.throwIfAborted();
+    const slice = Math.min(remaining, MAX_TIMER_DELAY_MS);
+    await sleepSlice(slice, signal);
+    remaining -= slice;
+  }
+}
+
+async function sleepSlice(delayMs: number, signal: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener('abort', onAbort);
@@ -1052,7 +1156,11 @@ function expectObject(candidate: unknown, path: string): Record<string, unknown>
 }
 
 function isObject(candidate: unknown): candidate is Record<string, unknown> {
-  return candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate);
+  if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(candidate) as unknown;
+  return prototype === Object.prototype || prototype === null;
 }
 
 function expectStringArray(candidate: unknown, path: string): string[] {
@@ -1060,6 +1168,17 @@ function expectStringArray(candidate: unknown, path: string): string[] {
     fail(path, 'must be an array of strings');
   }
   return candidate;
+}
+
+function expectUniqueStrings(values: readonly string[], path: string): void {
+  const firstIndex = new Map<string, number>();
+  for (const [index, value] of values.entries()) {
+    const previous = firstIndex.get(value);
+    if (previous !== undefined) {
+      fail(`${path}/${index}`, `duplicates item ${previous}`);
+    }
+    firstIndex.set(value, index);
+  }
 }
 
 function expectExactKeys(
@@ -1102,7 +1221,11 @@ function expectNonnegativeNumber(candidate: unknown, path: string): void {
   }
 }
 
-function assertJsonValue(candidate: unknown, path: string): asserts candidate is JsonValue {
+function assertJsonValue(
+  candidate: unknown,
+  path: string,
+  ancestors = new Set<object>(),
+): asserts candidate is JsonValue {
   if (
     candidate === null ||
     typeof candidate === 'string' ||
@@ -1112,13 +1235,21 @@ function assertJsonValue(candidate: unknown, path: string): asserts candidate is
     return;
   }
   if (Array.isArray(candidate)) {
-    for (const [index, value] of candidate.entries()) assertJsonValue(value, `${path}/${index}`);
+    if (ancestors.has(candidate)) fail(path, 'must not contain a cycle');
+    ancestors.add(candidate);
+    for (const [index, value] of candidate.entries()) {
+      assertJsonValue(value, `${path}/${index}`, ancestors);
+    }
+    ancestors.delete(candidate);
     return;
   }
   if (isObject(candidate)) {
+    if (ancestors.has(candidate)) fail(path, 'must not contain a cycle');
+    ancestors.add(candidate);
     for (const [key, value] of Object.entries(candidate)) {
-      assertJsonValue(value, `${path}/${escapePointerSegment(key)}`);
+      assertJsonValue(value, `${path}/${escapePointerSegment(key)}`, ancestors);
     }
+    ancestors.delete(candidate);
     return;
   }
   fail(path, 'must be a JSON value');

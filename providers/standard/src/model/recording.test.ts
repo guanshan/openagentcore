@@ -79,6 +79,7 @@ describe('ModelPort recording schema', () => {
     const schemaAccepted = validateRecording(vector.recording);
     if (vector.expected === 'schema-rejected') {
       expect(schemaAccepted).toBe(false);
+      expect(() => new ReplayModelPort(vector.recording)).toThrow(ModelRecordingInvariantError);
       return;
     }
 
@@ -101,6 +102,72 @@ describe('ModelPort recording schema', () => {
     expect(
       () => new RecordingModelPort(new ScriptedModelPort([], { capabilities: { maxContext: 0 } })),
     ).toThrow(ModelRecordingInvariantError);
+  });
+
+  it.each([
+    {
+      name: 'message missing content',
+      recording: {
+        ...makeRecording([]),
+        operations: [
+          {
+            seq: 0,
+            operation: 'countTokens',
+            request: { messages: [{ role: 'user' }], tools: [], toolUse: 'none' },
+            outcome: { kind: 'returned', atMs: 0, tokens: 1 },
+          },
+        ],
+      },
+    },
+    {
+      name: 'tool missing inputSchema',
+      recording: {
+        ...makeRecording([]),
+        operations: [
+          {
+            seq: 0,
+            operation: 'countTokens',
+            request: {
+              messages: [],
+              tools: [{ name: 'echo' }],
+              toolUse: 'native',
+            },
+            outcome: { kind: 'returned', atMs: 0, tokens: 1 },
+          },
+        ],
+      },
+    },
+    {
+      name: 'usage missing token fields',
+      recording: {
+        ...makeRecording([]),
+        operations: [
+          {
+            seq: 0,
+            operation: 'stream',
+            request,
+            frames: [
+              { kind: 'chunk', atMs: 0, chunk: { kind: 'usage', usage: {} } },
+              { kind: 'completed', atMs: 0 },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      name: 'duplicate redaction key',
+      recording: {
+        ...makeRecording([]),
+        redaction: {
+          replacement: MODEL_RECORDING_REDACTION,
+          sensitiveKeys: ['authorization', 'authorization'],
+          pointers: [],
+        },
+      },
+    },
+  ])('rejects nested data rejected by the schema: $name', ({ recording }) => {
+    expect(validateRecording(recording)).toBe(false);
+    expect(() => new ReplayModelPort(recording)).toThrow(ModelRecordingInvariantError);
   });
 });
 
@@ -155,7 +222,7 @@ describe('RecordingModelPort and ReplayModelPort', () => {
     const received: ModelRequest[] = [];
     const failure = new ModelPortError(
       'rate-limit',
-      'Bearer top-secret rejected pointer-secret and client-secret',
+      'credential top-secret rejected pointer-secret and client-secret',
       {
         retryable: true,
         status: 429,
@@ -315,6 +382,30 @@ describe('RecordingModelPort and ReplayModelPort', () => {
     );
   });
 
+  it('redacts overlapping secret values longest-first', async () => {
+    const delegate: ModelPort = {
+      capabilities,
+      async countTokens() {
+        throw new Error('credential abcdef was rejected');
+      },
+      async *stream() {
+        yield* [];
+      },
+    };
+    const recorder = new RecordingModelPort(delegate);
+    const overlappingRequest: ModelRequest = {
+      ...request,
+      metadata: { apiKey: 'abc', access_token: 'abcdef' },
+    };
+
+    await expect(
+      recorder.countTokens(overlappingRequest, new AbortController().signal),
+    ).rejects.toThrow('abcdef');
+    const serialized = JSON.stringify(recorder.snapshot());
+    expect(serialized).not.toContain('abcdef');
+    expect(serialized).not.toContain('[REDACTED]def');
+  });
+
   it('replays instantly by default and can preserve relative stream timing', async () => {
     const recording = makeRecording([
       {
@@ -345,6 +436,44 @@ describe('RecordingModelPort and ReplayModelPort', () => {
     });
     await collect(timed.stream(request, new AbortController().signal));
     expect(delays).toEqual([5, 4]);
+  });
+
+  it('splits recorded delays that exceed the runtime timer limit', async () => {
+    vi.useFakeTimers();
+    try {
+      const maximumTimerDelay = 2_147_483_647;
+      const replay = new ReplayModelPort(
+        makeRecording([
+          {
+            seq: 0,
+            operation: 'stream',
+            request,
+            frames: [
+              {
+                kind: 'chunk',
+                atMs: maximumTimerDelay + 5,
+                chunk: { kind: 'text', text: 'after long wait' },
+              },
+              { kind: 'completed', atMs: maximumTimerDelay + 5 },
+            ],
+          },
+        ]),
+        { timing: 'recorded' },
+      );
+      const pending = collect(replay.stream(request, new AbortController().signal));
+      let settled = false;
+      void pending.finally(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(maximumTimerDelay);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(5);
+      await expect(pending).resolves.toEqual([{ kind: 'text', text: 'after long wait' }]);
+      replay.assertExhausted();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects consumer return that does not match the recorded terminal', async () => {
