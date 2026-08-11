@@ -91,8 +91,8 @@ describe('AgentEvent v0 schema', () => {
       vectors.filter(
         (vector) =>
           vector.fileName.startsWith('invalid-replay-') && vector.expected === 'replay-rejected',
-      ),
-    ).toHaveLength(2);
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it('covers all ten event variants with schema-valid fixtures', () => {

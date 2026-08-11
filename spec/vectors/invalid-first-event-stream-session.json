@@ -1,0 +1,19 @@
+{
+  "description": "The first event session must match the explicitly declared stream session.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-declared"
+  },
+  "expected": "append-rejected",
+  "events": [
+    {
+      "type": "turn.started",
+      "seq": 0,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-other",
+      "ts": "2026-08-11T04:35:00Z",
+      "turnId": "turn-1",
+      "input": { "content": "Wrong stream session." }
+    }
+  ]
+}
