@@ -86,13 +86,13 @@ describe('AgentEvent v0 schema', () => {
     }
   });
 
-  it('covers at least two replay-rejected compaction ranges', () => {
+  it('covers at least three replay-rejected compaction invariants', () => {
     expect(
       vectors.filter(
         (vector) =>
           vector.fileName.startsWith('invalid-replay-') && vector.expected === 'replay-rejected',
       ).length,
-    ).toBeGreaterThanOrEqual(2);
+    ).toBeGreaterThanOrEqual(3);
   });
 
   it('covers all ten event variants with schema-valid fixtures', () => {

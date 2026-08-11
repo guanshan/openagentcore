@@ -39,7 +39,11 @@
 - `EventRange` 使用包含端点的 `fromSeq` 与 `toSeq`，并满足 `0 <= fromSeq <= toSeq < compaction event seq`。跨字段大小关系由投影语义校验。
 - `StopReason` 当前只约束为非空字符串；正式枚举留待 AgentLoop 契约定义。
 
-Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。重复或扩大已摘要的完整区间会替换旧摘要；显式折叠旧 `compaction.applied` 事件时，新摘要继承其完整 `representedRanges`。摘要按全部代表区间中的最大 `seq` 定位，保证与保留事件的时间顺序一致；只与现有摘要区间部分重叠的事件流会被投影拒绝。
+Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。摘要分别记录 `contentRanges` 与 `compactionSeqs`：`contentRanges` 只包含被折叠且实际产生消息投影条目的内容事件，`compactionSeqs` 只包含被折叠的旧 `compaction.applied` 事件序号。显式折叠或替换旧摘要时，新摘要继承其两类记录，并把旧摘要自身的事件序号加入 `compactionSeqs`，但不得把这些元事件序号混入内容覆盖。物化摘要中的 `dropped` 仍是最近一次 `compaction.applied` 声明的原始区间，不表示完整内容覆盖。仍使用旧 `representedRanges` 的快照无法无损区分内容与元事件，恢复时必须拒绝该快照并从 EventLog 完整重放。
+
+一次 compaction 的有效内容覆盖必须非空，并在消息投影中构成一个连续块；不产生消息投影条目的事件不形成内容间隔，被折叠的 compaction 元事件也视为透明。若两个被覆盖的内容条目之间仍有保留的内容或摘要，重放必须抛出投影不变量错误。重复或扩大已摘要的完整内容区间会替换旧摘要；只与现有摘要内容区间部分重叠的事件流同样会被拒绝。
+
+摘要位置只按 `contentRanges` 中最大的 `toSeq` 推导，物化摘要也只公开完整的 `contentRanges`；`compactionSeqs` 不参与定位或物化。因此，折叠旧摘要本身不会把新摘要移到较晚的保留内容之后，也不会让摘要两侧原本分离的消息片段重新合并。
 
 ## Trajectory v0
 

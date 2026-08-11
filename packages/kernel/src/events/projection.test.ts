@@ -8,6 +8,7 @@ import {
   projectMessageHistory,
   ProjectionInvariantError,
 } from './projection.js';
+import type { MessageProjectionState } from './projection.js';
 import { assertSchemaValidEvent, collect } from './schema.test-support.js';
 import { InMemorySnapshotStore } from './snapshot-store.js';
 import type {
@@ -196,7 +197,7 @@ describe('message history projection', () => {
         kind: 'summary',
         content: 'B was compacted.',
         dropped: { fromSeq: 2, toSeq: 2 },
-        representedRanges: [{ fromSeq: 2, toSeq: 2 }],
+        contentRanges: [{ fromSeq: 2, toSeq: 2 }],
         sourceSeqs: [4],
       },
       {
@@ -222,46 +223,112 @@ describe('message history projection', () => {
         kind: 'summary',
         content: 'Replacement summary.',
         dropped: { fromSeq: 2, toSeq: 2 },
-        representedRanges: [{ fromSeq: 0, toSeq: 2 }],
+        contentRanges: [{ fromSeq: 0, toSeq: 1 }],
         sourceSeqs: [3],
       },
     ]);
   });
 
-  it('positions a folded summary after the maximum sequence it represents', async () => {
+  it('keeps a folded summary at the position of its content coverage', async () => {
     const projection = await projectMessageHistory([
       modelDelta(0, 'A'),
       modelDelta(1, 'B'),
       modelDelta(2, 'C'),
-      modelDelta(3, 'D'),
-      modelDelta(4, 'E'),
-      compaction(5, 0, 1, 'AB was compacted.'),
-      modelDelta(6, 'F'),
-      compaction(7, 5, 6, 'Earlier summary and F were compacted.'),
+      compaction(3, 1, 1, 'First summary.'),
+      compaction(4, 3, 3, 'Replacement summary.'),
     ]);
 
+    expect(projection.entries[1]).toMatchObject({
+      kind: 'summary',
+      contentRanges: [{ fromSeq: 1, toSeq: 1 }],
+      compactionSeqs: [3],
+      sourceSeq: 4,
+    });
     expect(materializeMessageHistory(projection)).toEqual([
       {
         kind: 'message',
         role: 'assistant',
         stepId: 'step-1',
-        content: 'CDE',
-        sourceSeqs: [2, 3, 4],
+        content: 'A',
+        sourceSeqs: [0],
       },
       {
         kind: 'summary',
-        content: 'Earlier summary and F were compacted.',
-        dropped: { fromSeq: 5, toSeq: 6 },
-        representedRanges: [
-          { fromSeq: 0, toSeq: 1 },
-          { fromSeq: 5, toSeq: 6 },
-        ],
-        sourceSeqs: [7],
+        content: 'Replacement summary.',
+        dropped: { fromSeq: 3, toSeq: 3 },
+        contentRanges: [{ fromSeq: 1, toSeq: 1 }],
+        sourceSeqs: [4],
+      },
+      {
+        kind: 'message',
+        role: 'assistant',
+        stepId: 'step-1',
+        content: 'C',
+        sourceSeqs: [2],
       },
     ]);
   });
 
-  it('preserves every represented range when materializing a folded summary', async () => {
+  it('rejects content coverage split by a retained message', async () => {
+    await expect(
+      projectMessageHistory([
+        modelDelta(0, 'A'),
+        modelDelta(1, 'B'),
+        compaction(2, 0, 0, 'First summary.'),
+        modelDelta(3, 'C'),
+        compaction(4, 2, 3, 'Non-contiguous summary.'),
+      ]),
+    ).rejects.toThrow(ProjectionInvariantError);
+  });
+
+  it('rejects a folded summary that crosses retained delta fragments', async () => {
+    await expect(
+      projectMessageHistory([
+        modelDelta(0, 'A'),
+        modelDelta(1, 'B'),
+        modelDelta(2, 'C'),
+        modelDelta(3, 'D'),
+        modelDelta(4, 'E'),
+        compaction(5, 0, 1, 'AB was compacted.'),
+        modelDelta(6, 'F'),
+        compaction(7, 5, 6, 'Earlier summary and F were compacted.'),
+      ]),
+    ).rejects.toThrow(ProjectionInvariantError);
+  });
+
+  it('treats previously folded compaction sequences as transparent', async () => {
+    const projection = await projectMessageHistory([
+      modelDelta(0, 'A'),
+      compaction(1, 0, 0, 'First A summary.'),
+      modelDelta(2, 'B'),
+      compaction(3, 1, 1, 'Second A summary.'),
+      modelDelta(4, 'C'),
+      compaction(5, 3, 3, 'Third A summary.'),
+      compaction(6, 1, 4, 'BC summary.'),
+    ]);
+
+    expect(projection.entries).toMatchObject([
+      {
+        kind: 'summary',
+        content: 'Third A summary.',
+        contentRanges: [{ fromSeq: 0, toSeq: 0 }],
+        compactionSeqs: [1, 3],
+        sourceSeq: 5,
+      },
+      {
+        kind: 'summary',
+        content: 'BC summary.',
+        contentRanges: [
+          { fromSeq: 2, toSeq: 2 },
+          { fromSeq: 4, toSeq: 4 },
+        ],
+        compactionSeqs: [],
+        sourceSeq: 6,
+      },
+    ]);
+  });
+
+  it('preserves every content range when materializing a folded summary', async () => {
     const projection = await projectMessageHistory([
       turnStarted(0),
       modelDelta(1, 'A'),
@@ -274,7 +341,7 @@ describe('message history projection', () => {
         kind: 'summary',
         content: 'Second summary.',
         dropped: { fromSeq: 2, toSeq: 2 },
-        representedRanges: [{ fromSeq: 0, toSeq: 2 }],
+        contentRanges: [{ fromSeq: 0, toSeq: 1 }],
         sourceSeqs: [3],
       },
     ]);
@@ -292,10 +359,44 @@ describe('message history projection', () => {
         kind: 'summary',
         content: 'Replacement summary.',
         dropped: { fromSeq: 0, toSeq: 0 },
-        representedRanges: [{ fromSeq: 0, toSeq: 0 }],
+        contentRanges: [{ fromSeq: 0, toSeq: 0 }],
         sourceSeqs: [2],
       },
     ]);
+  });
+
+  it('does not expose mutable aliases for summary ranges', async () => {
+    const compactionEvent = compaction(2, 0, 1, 'Summary.');
+    const projection = await projectMessageHistory([
+      turnStarted(0),
+      modelDelta(1, 'A'),
+      compactionEvent,
+    ]);
+    const materialized = materializeMessageHistory(projection);
+    const summary = materialized.find((item) => item.kind === 'summary');
+    if (summary?.kind !== 'summary') {
+      throw new Error('Expected a materialized summary.');
+    }
+
+    expect(Object.isFrozen(materialized)).toBe(true);
+    expect(Object.isFrozen(summary)).toBe(true);
+    expect(Object.isFrozen(summary.dropped)).toBe(true);
+    expect(Object.isFrozen(summary.contentRanges)).toBe(true);
+    expect(() => {
+      (summary.dropped as { fromSeq: number }).fromSeq = 1;
+    }).toThrow(TypeError);
+
+    expect(Object.isFrozen(compactionEvent.dropped)).toBe(false);
+    (compactionEvent.dropped as { fromSeq: number }).fromSeq = 1;
+
+    const projectedSummary = projection.entries.find((entry) => entry.kind === 'summary');
+    expect(projectedSummary).toMatchObject({
+      dropped: { fromSeq: 0, toSeq: 1 },
+      contentRanges: [{ fromSeq: 0, toSeq: 1 }],
+    });
+    expect(() =>
+      applyEventToMessageProjection(projection, compaction(3, 0, 0, 'Partial summary.')),
+    ).toThrow(ProjectionInvariantError);
   });
 
   it('rejects a compaction that partially overlaps an existing summary', async () => {
@@ -322,6 +423,12 @@ describe('message history projection', () => {
     );
   });
 
+  it('rejects a compaction that covers no projected content', async () => {
+    await expect(
+      projectMessageHistory([turnFinished(0), compaction(1, 0, 0, 'No content.')]),
+    ).rejects.toThrow(ProjectionInvariantError);
+  });
+
   it('rejects an unknown runtime event with its type and sequence', () => {
     const unknownEvent = {
       type: 'model.future-delta',
@@ -337,6 +444,27 @@ describe('message history projection', () => {
 });
 
 describe('projection recovery', () => {
+  it('rejects an initial summary with empty content coverage before replaying the tail', async () => {
+    const invalidState = {
+      entries: [
+        {
+          kind: 'summary',
+          content: 'Invalid summary.',
+          dropped: { fromSeq: 0, toSeq: 0 },
+          contentRanges: [],
+          compactionSeqs: [],
+          sourceSeq: 1,
+        },
+      ],
+    } as unknown as MessageProjectionState;
+
+    await expect(projectMessageHistory([], invalidState)).rejects.toThrow(
+      new ProjectionInvariantError(
+        'projection entry at index 0 must have non-empty contentRanges.',
+      ),
+    );
+  });
+
   it('produces the same state from full replay and snapshot plus tail replay', async () => {
     const log = new InMemoryEventLog(identity);
     const snapshots = new InMemorySnapshotStore<ReturnType<typeof createMessageProjection>>();
