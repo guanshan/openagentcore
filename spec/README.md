@@ -55,16 +55,18 @@ Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。重�
 }
 ```
 
-`expected` 只能是以下三种结果：
+`expected` 只能是以下四种结果：
 
-- `accepted`：事件结构与事件流不变量均合法。
+- `accepted`：事件结构、事件流和重放不变量均合法。
 - `schema-rejected`：至少一个事件不符合 AgentEvent Schema。
 - `append-rejected`：事件结构合法，但事件流不变量不成立。
+- `replay-rejected`：事件结构与事件流合法，但消息历史投影的重放不变量不成立。
 
-判定分两步：
+判定分三步，前一步拒绝后不再运行后续步骤：
 
 1. 每个事件必须通过 `agent-event.v0.json`。
 2. 整条流必须属于同一租户和会话，且 `seq` 严格递增。
+3. 整条流必须可以确定性重放消息历史投影；`EventRange` 的有序性及不得引用当前 compaction 事件或未来事件，均在此阶段校验。
 
 一致性测试运行器必须启用 JSON Schema 标准 format 的断言语义，确保 `date-time` 不是仅作注解。编译 `trajectory.v0.json` 前，必须先按 `$id` 注册 `agent-event.v0.json`，或提供等价的 Schema resolver。
 

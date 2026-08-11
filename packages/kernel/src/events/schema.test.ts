@@ -7,13 +7,18 @@ import * as formatsModule from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
 
 import { EventLogInvariantError, InMemoryEventLog } from './event-log.js';
+import {
+  materializeMessageHistory,
+  projectMessageHistory,
+  ProjectionInvariantError,
+} from './projection.js';
 import type { AgentEvent, AgentEventType, Trajectory } from './types.js';
 
 const eventSchemaId = 'https://openagentcore.dev/spec/schemas/agent-event.v0.json';
 const specDirectory = fileURLToPath(new URL('../../../../spec/', import.meta.url));
 const vectorDirectory = fileURLToPath(new URL('../../../../spec/vectors/', import.meta.url));
 
-type VectorExpectation = 'accepted' | 'schema-rejected' | 'append-rejected';
+type VectorExpectation = 'accepted' | 'schema-rejected' | 'append-rejected' | 'replay-rejected';
 
 interface SpecVector {
   readonly fileName: string;
@@ -67,9 +72,33 @@ describe('AgentEvent v0 schema', () => {
 
     if (vector.expected === 'append-rejected') {
       expect(appendError).toBeInstanceOf(EventLogInvariantError);
-    } else {
-      expect(appendError).toBeUndefined();
+      return;
     }
+
+    expect(appendError).toBeUndefined();
+
+    let replayError: unknown;
+    try {
+      const projection = await projectMessageHistory(log.read(0));
+      materializeMessageHistory(projection);
+    } catch (error) {
+      replayError = error;
+    }
+
+    if (vector.expected === 'replay-rejected') {
+      expect(replayError).toBeInstanceOf(ProjectionInvariantError);
+    } else {
+      expect(replayError).toBeUndefined();
+    }
+  });
+
+  it('covers at least two replay-rejected compaction ranges', () => {
+    expect(
+      vectors.filter(
+        (vector) =>
+          vector.fileName.startsWith('invalid-replay-') && vector.expected === 'replay-rejected',
+      ),
+    ).toHaveLength(2);
   });
 
   it('covers all ten event variants with schema-valid fixtures', () => {
@@ -208,7 +237,8 @@ function isSpecVector(value: unknown): value is Omit<SpecVector, 'fileName'> {
     typeof candidate['description'] === 'string' &&
     (candidate['expected'] === 'accepted' ||
       candidate['expected'] === 'schema-rejected' ||
-      candidate['expected'] === 'append-rejected') &&
+      candidate['expected'] === 'append-rejected' ||
+      candidate['expected'] === 'replay-rejected') &&
     Array.isArray(candidate['events'])
   );
 }

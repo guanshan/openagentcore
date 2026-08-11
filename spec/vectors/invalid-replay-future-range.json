@@ -1,0 +1,15 @@
+{
+  "description": "A compaction range that reaches a future sequence is rejected during replay.",
+  "expected": "replay-rejected",
+  "events": [
+    {
+      "type": "compaction.applied",
+      "seq": 4,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-future-range",
+      "ts": "2026-08-11T04:20:00Z",
+      "summary": "Invalid future range.",
+      "dropped": { "fromSeq": 1, "toSeq": 5 }
+    }
+  ]
+}
