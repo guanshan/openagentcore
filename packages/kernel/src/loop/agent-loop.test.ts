@@ -18,6 +18,7 @@ import {
   FailingTool,
   ResultFailingTool,
   SlowTool,
+  ToolContractError,
   ToolRegistry,
   type Tool,
 } from '../tools/tool.js';
@@ -429,6 +430,39 @@ describe('AgentLoop', () => {
       error: { name: 'Error', message: 'boom' },
     });
     await expectClosedAndSchemaValid(log, 'failed');
+  });
+
+  it('reports malformed tool results with the tool name and does not enter retry', async () => {
+    const invalidTool = {
+      name: 'bad',
+      inputSchema: { type: 'object' },
+      permission: { kind: 'none' },
+      execute: async () => ({ result: { unexpected: true } }) as never,
+    } satisfies Tool;
+    const model = new ScriptedModelPort([
+      [toolCall('call-bad', 'bad', null), { kind: 'finish', reason: 'tool-calls' }],
+    ]);
+    const { loop } = createLoop(model, {
+      tools: new ToolRegistry().register(invalidTool),
+    });
+
+    let contractError: unknown;
+    try {
+      await loop.runTurn({ content: 'Call the malformed tool.' });
+    } catch (error) {
+      contractError = error;
+    }
+    expect(contractError).toBeInstanceOf(ToolContractError);
+    expect(contractError).toEqual(
+      expect.objectContaining({
+        message: 'Tool "bad" must return { outcome, result }, received object without "outcome".',
+      }),
+    );
+    expect(loop.strategyMetrics()).toContainEqual({
+      kind: 'retry',
+      name: 'exponential-backoff',
+      metrics: { evaluations: 0, retries: 0, exhausted: 0 },
+    });
   });
 
   it('feeds back an exhausted execution failure so the model can choose another tool', async () => {

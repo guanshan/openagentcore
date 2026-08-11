@@ -7,7 +7,12 @@ import type {
   RetryStrategyInput,
 } from '../strategy/builtins.js';
 import type { Strategy, StrategyContext } from '../strategy/registry.js';
-import type { Tool, ToolExecutionRequest, ToolExecutionResult } from '../tools/tool.js';
+import {
+  ToolContractError,
+  type Tool,
+  type ToolExecutionRequest,
+  type ToolExecutionResult,
+} from '../tools/tool.js';
 import {
   assembleContext,
   contextDraftToModelRequest,
@@ -171,6 +176,9 @@ export async function executePersistedToolCall(
       );
     } catch (error) {
       if (error instanceof AgentLoopCrashError) {
+        throw error;
+      }
+      if (error instanceof ToolContractError) {
         throw error;
       }
       if (signal.aborted) {
@@ -727,11 +735,48 @@ async function invokeTool(
     throw context.error;
   }
   if (context.result === undefined) {
-    throw new AgentLoopInvariantError(
-      `Tool middleware completed without a result for ${request.callId}.`,
+    throw new ToolContractError(tool.name, 'undefined');
+  }
+  return structuredClone(validateToolExecutionResult(tool.name, context.result));
+}
+
+function validateToolExecutionResult(tool: string, value: unknown): ToolExecutionResult {
+  if (value === null) {
+    throw new ToolContractError(tool, 'null');
+  }
+  if (Array.isArray(value)) {
+    throw new ToolContractError(tool, 'an array');
+  }
+  if (typeof value !== 'object') {
+    throw new ToolContractError(tool, typeof value);
+  }
+  const candidate = value as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(candidate, 'outcome')) {
+    throw new ToolContractError(tool, 'object without "outcome"');
+  }
+  if (candidate['outcome'] !== 'succeeded' && candidate['outcome'] !== 'failed') {
+    throw new ToolContractError(
+      tool,
+      `object with invalid "outcome" ${formatValue(candidate['outcome'])}`,
     );
   }
-  return structuredClone(context.result);
+  if (!Object.prototype.hasOwnProperty.call(candidate, 'result')) {
+    throw new ToolContractError(tool, 'object without "result"');
+  }
+  if (!isJsonValue(candidate['result'])) {
+    throw new ToolContractError(tool, 'object whose "result" is not JSON');
+  }
+  return {
+    outcome: candidate['outcome'],
+    result: structuredClone(candidate['result']),
+  };
+}
+
+function formatValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  return String(value);
 }
 
 function strategyContext(

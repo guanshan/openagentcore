@@ -111,6 +111,7 @@ export {
   FailingTool,
   ResultFailingTool,
   SlowTool,
+  ToolContractError,
   ToolRegistry,
   ToolRegistryError,
 } from './tools/tool.js';
