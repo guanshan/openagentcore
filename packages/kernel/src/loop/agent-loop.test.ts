@@ -499,6 +499,55 @@ describe('AgentLoop', () => {
     await expectClosedAndSchemaValid(log, 'failed');
   });
 
+  it('uses the persisted decision while recovering a pending permission', async () => {
+    const log = new InMemoryEventLog(identity('permission-recovery'));
+    const tool = new EchoTool();
+    const crashing = new AgentLoop({
+      eventLog: log,
+      model: new ScriptedModelPort([
+        [toolCall('call-pending-policy', 'echo', null), { kind: 'finish', reason: 'tool-calls' }],
+      ]),
+      tools: new ToolRegistry().register(tool),
+      now: () => timestamp,
+    });
+    crashing.use('event', async (context, next) => {
+      await next();
+      if (context.event.type === 'permission.requested') {
+        throw new AgentLoopCrashError('lost while awaiting policy');
+      }
+    });
+
+    await expect(crashing.runTurn({ content: 'Recover the policy.' })).rejects.toBeInstanceOf(
+      AgentLoopCrashError,
+    );
+
+    const resumed = new AgentLoop({
+      eventLog: log,
+      model: new ScriptedModelPort([]),
+      tools: new ToolRegistry().register(tool),
+      now: () => timestamp,
+    });
+    resumed.use('event', async (context, next) => {
+      if (context.event.type === 'permission.resolved') {
+        context.event = { ...context.event, decision: 'deny', reason: 'recovered-event-policy' };
+      }
+      await next();
+    });
+
+    const result = await resumed.resumeTurn();
+
+    expect(result.stopReason).toBe('failed');
+    expect(tool.requests).toHaveLength(0);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'permission.resolved',
+        decision: 'deny',
+        reason: 'recovered-event-policy',
+      }),
+    );
+    await expectClosedAndSchemaValid(log, 'failed');
+  });
+
   it('stops at max-steps after a tool step', async () => {
     const model = new ScriptedModelPort([
       [toolCall('call-limit', 'echo', null), { kind: 'finish', reason: 'tool-calls' }],
@@ -533,6 +582,63 @@ describe('AgentLoop', () => {
     ).rejects.toBe(reason);
 
     await expectClosedAndSchemaValid(log, 'aborted');
+  });
+
+  it('reconciles the remaining tool intents after a crash during batch persistence', async () => {
+    const firstResponse: readonly ModelChunk[] = [
+      toolCall('call-batch-1', 'echo', { value: 1 }),
+      toolCall('call-batch-2', 'echo', { value: 2 }),
+      { kind: 'usage', usage: usage(4, 2, 0.02) },
+      { kind: 'finish', reason: 'tool-calls' },
+    ];
+    const finalResponse: readonly ModelChunk[] = [
+      { kind: 'text', text: 'Batch recovered.' },
+      { kind: 'usage', usage: usage(2, 2, 0.01) },
+      { kind: 'finish', reason: 'stop' },
+    ];
+    const expectedLoop = createLoop(new ScriptedModelPort([firstResponse, finalResponse]), {
+      tools: new ToolRegistry().register(new EchoTool()),
+    });
+    const expected = await expectedLoop.loop.runTurn({ content: 'Run the batch.' });
+
+    const log = new InMemoryEventLog(identity('batch-persistence'));
+    const tool = new EchoTool();
+    const crashing = new AgentLoop({
+      eventLog: log,
+      model: new ScriptedModelPort([firstResponse]),
+      tools: new ToolRegistry().register(tool),
+      now: () => timestamp,
+    });
+    let crashAfterFirstIntent = true;
+    crashing.use('event', async (context, next) => {
+      await next();
+      if (crashAfterFirstIntent && context.event.type === 'tool.call') {
+        crashAfterFirstIntent = false;
+        throw new AgentLoopCrashError('lost while persisting tool batch');
+      }
+    });
+
+    await expect(crashing.runTurn({ content: 'Run the batch.' })).rejects.toBeInstanceOf(
+      AgentLoopCrashError,
+    );
+    expect((await projectSessionState(log.read(0))).pendingToolCalls).toHaveLength(1);
+
+    const resumed = new AgentLoop({
+      eventLog: log,
+      model: new ScriptedModelPort([finalResponse]),
+      tools: new ToolRegistry().register(tool),
+      now: () => timestamp,
+    });
+    const actual = await resumed.resumeTurn();
+
+    expect(actual.history).toEqual(expected.history);
+    expect(actual.usage).toEqual(expected.usage);
+    expect(tool.requests.map((request) => request.callId)).toEqual([
+      'call-batch-1',
+      'call-batch-2',
+    ]);
+    expect(actual.events.filter((event) => event.type === 'tool.call')).toHaveLength(2);
+    await expectClosedAndSchemaValid(log, 'done');
   });
 
   it('recovers a multi-tool batch with stable callIds, usage, and uninterrupted history', async () => {

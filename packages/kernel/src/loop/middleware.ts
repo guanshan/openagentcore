@@ -80,6 +80,10 @@ export interface MemoryMiddlewareContext extends MiddlewareBaseContext {
 }
 
 export interface EventMiddlewareContext extends MiddlewareBaseContext {
+  /**
+   * Proposed event view. AgentLoop keeps causal IDs and recorded Port inputs/outputs authoritative;
+   * behavioral rewrites belong in model, tool, or context middleware and permission Strategy.
+   */
   event: AgentEvent;
   /** Set by the append terminal only after the event is durably accepted. */
   persisted: boolean;

@@ -737,6 +737,9 @@ export class AgentLoop {
       return;
     }
 
+    await this.#reconcilePersistedToolBatch(activeStep.stepId, signal);
+    state = await this.#reloadState();
+
     for (const permission of [...state.pendingPermissions]) {
       const call = state.pendingToolCalls.find(
         (candidate) => candidate.callId === permission.callId,
@@ -774,7 +777,7 @@ export class AgentLoop {
         },
         this.#strategyContext(signal, activeTurn.turnId, activeStep.stepId),
       );
-      await this.#emit(
+      const persisted = await this.#emit(
         {
           type: 'permission.resolved',
           reqId: permission.reqId,
@@ -785,8 +788,14 @@ export class AgentLoop {
         },
         signal,
       );
-      if (decision.decision === 'deny') {
-        await this.#emitDeniedToolResult(call.callId, activeStep.stepId, decision.reason, signal);
+      if (persisted.type !== 'permission.resolved') {
+        throw new AgentLoopInvariantError(
+          'Expected permission.resolved while recovering approval.',
+        );
+      }
+      const persistedReason = persisted.reason ?? decision.reason;
+      if (persisted.decision === 'deny') {
+        await this.#emitDeniedToolResult(call.callId, activeStep.stepId, persistedReason, signal);
       } else {
         await this.#executePersistedToolCall(
           tool,
@@ -847,6 +856,53 @@ export class AgentLoop {
     if (completedToolWork) {
       await this.#maybeCompact(refreshed.activeStep.turnId, refreshed.activeStep.stepId, signal);
       await this.#maybeCheckpoint(refreshed.activeStep.turnId, refreshed.activeStep.stepId, signal);
+    }
+  }
+
+  async #reconcilePersistedToolBatch(stepId: string, signal: AbortSignal): Promise<void> {
+    const events = await this.#eventsForStep(stepId);
+    const calls = events.filter(
+      (event): event is Extract<AgentEvent, { readonly type: 'tool.call' }> =>
+        event.type === 'tool.call',
+    );
+    if (calls.length === 0) {
+      return;
+    }
+
+    const persistedCallIds = new Set(calls.map((call) => call.callId));
+    const batchUsage = [...calls]
+      .reverse()
+      .find((call) => call.modelUsage !== undefined)?.modelUsage;
+    const modelCallIds = new Set<string>();
+    for (const event of events) {
+      if (event.type !== 'model.delta' || event.delta.kind !== 'tool') {
+        continue;
+      }
+      const call = recordedToolCall(event.delta.toolCallDelta);
+      if (call === undefined) {
+        continue;
+      }
+      if (modelCallIds.has(call.callId)) {
+        throw new AgentLoopInvariantError(
+          `Model response contains duplicate tool call ID ${call.callId}.`,
+        );
+      }
+      modelCallIds.add(call.callId);
+      if (persistedCallIds.has(call.callId)) {
+        continue;
+      }
+      await this.#emit(
+        {
+          type: 'tool.call',
+          stepId,
+          callId: call.callId,
+          tool: call.tool,
+          args: call.args,
+          ...(batchUsage === undefined ? {} : { modelUsage: batchUsage }),
+        },
+        signal,
+      );
+      persistedCallIds.add(call.callId);
     }
   }
 
@@ -1346,7 +1402,8 @@ function reconcileEventForPersistence(authoritative: AgentEvent, proposed: Agent
       // The event must describe the request that ModelPort actually received.
       return candidate;
     case 'model.delta':
-      return copyEventFields(candidate, proposed, ['delta']);
+      // The event is the durable model output used to reconcile a recovered tool batch.
+      return candidate;
     case 'tool.call':
       // Tool intent is fixed before side effects; argument rewriting belongs in tool middleware.
       return candidate;
@@ -1355,8 +1412,13 @@ function reconcileEventForPersistence(authoritative: AgentEvent, proposed: Agent
       return copyEventFields(candidate, proposed, ['result']);
     case 'permission.requested':
       return copyEventFields(candidate, proposed, ['reason']);
-    case 'permission.resolved':
-      return copyEventFields(candidate, proposed, ['decision', 'reason']);
+    case 'permission.resolved': {
+      const resolved = copyEventFields(candidate, proposed, ['decision', 'reason']);
+      if (authoritative.decision === 'deny') {
+        (resolved as unknown as { decision: 'allow' | 'deny' }).decision = 'deny';
+      }
+      return resolved;
+    }
     case 'compaction.applied':
       return copyEventFields(candidate, proposed, ['summary', 'dropped']);
     case 'checkpoint.created':
@@ -1510,6 +1572,26 @@ function decodePromptedToolCall(text: string): ToolCallModelChunk | undefined {
 
 function toolCallToJson(call: Pick<ToolCallModelChunk, 'callId' | 'tool' | 'args'>): JsonObject {
   return { callId: call.callId, tool: call.tool, args: structuredClone(call.args) };
+}
+
+function recordedToolCall(value: JsonValue): ToolCallModelChunk | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as JsonObject;
+  const callId = candidate['callId'];
+  const tool = candidate['tool'];
+  const args = candidate['args'];
+  if (
+    typeof callId !== 'string' ||
+    callId.length === 0 ||
+    typeof tool !== 'string' ||
+    tool.length === 0 ||
+    !isJsonValue(args)
+  ) {
+    return undefined;
+  }
+  return { kind: 'tool-call', callId, tool, args: structuredClone(args) };
 }
 
 function compactionEntries(entries: readonly MessageProjectionEntry[]): readonly CompactionEntry[] {
