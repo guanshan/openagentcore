@@ -402,15 +402,11 @@ describe('AgentLoop', () => {
     expect(failing.requests.map((request) => request.attempt)).toEqual([1, 2, 1, 2]);
     expect(echo.requests).toHaveLength(1);
     expect(
-      result.events.filter(
-        (event) => event.type === 'tool.result' && event.outcome === 'failed',
-      ),
-    ).toEqual(
-      [
-        expect.objectContaining({ callId: 'call-compile-1', attempts: 2 }),
-        expect.objectContaining({ callId: 'call-compile-2', attempts: 2 }),
-      ],
-    );
+      result.events.filter((event) => event.type === 'tool.result' && event.outcome === 'failed'),
+    ).toEqual([
+      expect.objectContaining({ callId: 'call-compile-1', attempts: 2 }),
+      expect.objectContaining({ callId: 'call-compile-2', attempts: 2 }),
+    ]);
     expect(model.requests[2]?.messages).toContainEqual({
       role: 'tool',
       content: JSON.stringify({

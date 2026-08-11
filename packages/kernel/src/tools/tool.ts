@@ -117,10 +117,7 @@ abstract class RecordingTool implements Tool {
     return structuredClone(this.#requests);
   }
 
-  async execute(
-    request: ToolExecutionRequest,
-    signal: AbortSignal,
-  ): Promise<ToolExecutionResult> {
+  async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     signal.throwIfAborted();
     this.#requests.push(structuredClone(request));
     const result = await this.executeRecorded(request, signal);

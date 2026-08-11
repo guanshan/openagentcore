@@ -309,9 +309,7 @@ export interface ExponentialBackoffConfig {
   readonly multiplier?: number;
   readonly maxDelayMs?: number;
   readonly exhaustedAction?: Exclude<RetryAction, 'retry'>;
-  readonly operationOverrides?: Readonly<
-    Partial<Record<RetryOperation, RetryOperationOverride>>
-  >;
+  readonly operationOverrides?: Readonly<Partial<Record<RetryOperation, RetryOperationOverride>>>;
 }
 
 interface NormalizedExponentialBackoffConfig {
@@ -320,9 +318,7 @@ interface NormalizedExponentialBackoffConfig {
   readonly multiplier: number;
   readonly maxDelayMs: number;
   readonly exhaustedAction: Exclude<RetryAction, 'retry'> | undefined;
-  readonly operationOverrides: Readonly<
-    Partial<Record<RetryOperation, RetryOperationOverride>>
-  >;
+  readonly operationOverrides: Readonly<Partial<Record<RetryOperation, RetryOperationOverride>>>;
 }
 
 export class ExponentialBackoffRetryStrategy implements Strategy<
@@ -406,13 +402,12 @@ export class ExponentialBackoffRetryStrategy implements Strategy<
 
 const retryOperations = ['model', 'tool', 'recovery'] as const satisfies readonly RetryOperation[];
 
-const defaultExhaustedActions: Readonly<
-  Record<RetryOperation, Exclude<RetryAction, 'retry'>>
-> = Object.freeze({
-  model: 'fail-turn',
-  tool: 'feed-back',
-  recovery: 'fail-turn',
-});
+const defaultExhaustedActions: Readonly<Record<RetryOperation, Exclude<RetryAction, 'retry'>>> =
+  Object.freeze({
+    model: 'fail-turn',
+    tool: 'feed-back',
+    recovery: 'fail-turn',
+  });
 
 function validateMaxAttempts(value: number, path: string): void {
   if (!Number.isInteger(value) || value < 1) {
