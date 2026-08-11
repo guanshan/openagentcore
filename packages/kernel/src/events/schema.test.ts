@@ -144,6 +144,22 @@ describe('AgentEvent v0 schema', () => {
     expect(complete.events.every((event) => validateEvent(event))).toBe(true);
   });
 
+  it('accepts a compaction strategy name and rejects an empty one', () => {
+    const event = {
+      type: 'compaction.applied',
+      seq: 2,
+      tenantId: 'tenant-demo',
+      sessionId: 'session-demo',
+      ts: '2026-08-11T00:00:00Z',
+      summary: 'Summary.',
+      dropped: { fromSeq: 0, toSeq: 1 },
+      strategy: 'sliding-window',
+    };
+
+    expect(validateEvent(event), JSON.stringify(validateEvent.errors)).toBe(true);
+    expect(validateEvent({ ...event, strategy: '' })).toBe(false);
+  });
+
   it('projects injected steering inputs into message history', async () => {
     const vector = vectors.find((candidate) => candidate.fileName === 'valid-turn-no-tools.json');
     if (vector === undefined) {

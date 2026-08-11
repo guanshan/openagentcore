@@ -2,7 +2,7 @@
 
 开源的、分层的 Agent 基建组合层（Infra Composition Layer）——自由组合各家 LLM / Sandbox / 网关 / 可观测 / 中间件产品（腾讯云、阿里云、火山引擎、知名开源组件），在其上快速做出生产级 Coding Agent 产品：嵌入式 App、客户端产品或后台 Server。
 
-> **状态：M0 内核开发阶段。** 已提供事件溯源 AgentLoop、Strategy/Middleware、内存事件存储与测试用 Model/Tool；尚未实现真实 Provider、Prompt 系统、Runtime、UI 与 CLI。
+> **状态：M0 内核开发阶段。** 已提供事件溯源 AgentLoop、Strategy/Middleware、版本化 Prompt、Context dry-run、内存事件存储与测试用 Model/Tool；尚未实现真实 Provider、Runtime、UI 与 CLI。
 
 ## 为什么是它
 
@@ -16,7 +16,7 @@
 | 目录                                                          | 层  | 内容                                                     |
 | ------------------------------------------------------------- | --- | -------------------------------------------------------- |
 | [spec/](spec/)                                                | L0  | 语言无关协议：事件流、工具 Schema、Trajectory、UI 线协议 |
-| [packages/kernel/](packages/kernel/)                          | L1  | 事件溯源 AgentLoop、Strategy/Middleware、Model/Tool Port |
+| [packages/kernel/](packages/kernel/)                          | L1  | AgentLoop、Prompt/Context、Strategy/Middleware、Port     |
 | [packages/coding/](packages/coding/)                          | —   | Coding Agent 能力包（代码理解、Git 工作流、验证闭环）    |
 | [packages/runtime/](packages/runtime/)                        | L3  | HTTP/WS、A2A、MCP server、任务队列、触发器、多租户       |
 | [packages/ui/](packages/ui/) · [packages/cli/](packages/cli/) | L4  | React UI Kit 与 `oac` 命令行                             |

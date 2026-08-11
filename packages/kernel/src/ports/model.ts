@@ -77,7 +77,7 @@ export type ScriptedModelStep = readonly ModelChunk[] | ScriptedModelResponse | 
 export interface ScriptedModelPortOptions {
   readonly capabilities?: Partial<ModelCapabilities>;
   /** Optional per-call token counts. Missing entries use the deterministic default counter. */
-  readonly tokenCounts?: readonly number[];
+  readonly tokenCounts?: readonly (number | Error)[];
 }
 
 const defaultCapabilities: ModelCapabilities = {
@@ -103,7 +103,7 @@ export class ScriptedModelPort implements ModelPort {
   readonly capabilities: ModelCapabilities;
 
   readonly #steps: readonly ScriptedModelStep[];
-  readonly #tokenCounts: readonly number[] | undefined;
+  readonly #tokenCounts: readonly (number | Error)[] | undefined;
   readonly #requests: ModelRequest[] = [];
   readonly #tokenCountRequests: ModelRequest[] = [];
   #nextStep = 0;
@@ -160,6 +160,9 @@ export class ScriptedModelPort implements ModelPort {
     signal.throwIfAborted();
 
     if (scripted !== undefined) {
+      if (scripted instanceof Error) {
+        throw scripted;
+      }
       return scripted;
     }
     if (this.#tokenCounts !== undefined) {

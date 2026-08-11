@@ -12,11 +12,15 @@ export interface ToolExecutionRequest {
   readonly attempt: number;
 }
 
+export type ToolExecutionResult =
+  | { readonly outcome: 'succeeded'; readonly result: JsonValue }
+  | { readonly outcome: 'failed'; readonly result: JsonValue };
+
 export interface ToolPort {
   readonly name: string;
   readonly inputSchema: JsonObject;
   readonly permission: ToolPermissionDescriptor;
-  execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<JsonValue>;
+  execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult>;
 }
 
 export type Tool = ToolPort;
@@ -113,7 +117,7 @@ abstract class RecordingTool implements Tool {
     return structuredClone(this.#requests);
   }
 
-  async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<JsonValue> {
+  async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     signal.throwIfAborted();
     this.#requests.push(structuredClone(request));
     const result = await this.executeRecorded(request, signal);
@@ -124,14 +128,28 @@ abstract class RecordingTool implements Tool {
   protected abstract executeRecorded(
     request: ToolExecutionRequest,
     signal: AbortSignal,
-  ): Promise<JsonValue>;
+  ): Promise<ToolExecutionResult>;
 }
 
 export class EchoTool extends RecordingTool {
   readonly name = 'echo';
 
-  protected async executeRecorded(request: ToolExecutionRequest): Promise<JsonValue> {
-    return structuredClone(request.args);
+  protected async executeRecorded(request: ToolExecutionRequest): Promise<ToolExecutionResult> {
+    return { outcome: 'succeeded', result: structuredClone(request.args) };
+  }
+}
+
+export class ResultFailingTool extends RecordingTool {
+  readonly name = 'result-failing';
+  readonly #result: JsonValue;
+
+  constructor(result: JsonValue = { error: 'Scripted tool result failure.' }) {
+    super();
+    this.#result = structuredClone(result);
+  }
+
+  protected async executeRecorded(): Promise<ToolExecutionResult> {
+    return { outcome: 'failed', result: structuredClone(this.#result) };
   }
 }
 
@@ -164,9 +182,9 @@ export class SlowTool extends RecordingTool {
   protected async executeRecorded(
     request: ToolExecutionRequest,
     signal: AbortSignal,
-  ): Promise<JsonValue> {
+  ): Promise<ToolExecutionResult> {
     await abortableDelay(this.#delayMs, signal);
-    return structuredClone(request.args);
+    return { outcome: 'succeeded', result: structuredClone(request.args) };
   }
 }
 

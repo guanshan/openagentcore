@@ -6,7 +6,7 @@
 
 ## Schema 版本与 `$id`
 
-- spec 发行版本使用 SemVer，首个版本为 `0.1.0`；本次向后兼容增补后的版本为 `0.2.0`。
+- spec 发行版本使用 SemVer，首个版本为 `0.1.0`；本次向后兼容增补后的版本为 `0.3.0`。
 - Schema 文件名使用 `<name>.v<major>.json`；`v0` 表示当前实验性契约代际，不等同于 spec 发行版本。
 - Schema 的规范 `$id` 为 `https://openagentcore.dev/spec/schemas/<filename>`，与仓库文件名一一对应。
 - 当前 Schema 使用 JSON Schema 2020-12；顶层协议对象默认封闭，未声明字段会被拒绝。
@@ -40,21 +40,22 @@
 本代际对 design.md §4.1 中尚未展开的类型采用以下最小定义：
 
 - `UserInput` 是带字符串 `content` 的封闭对象。
-- `ContextAssembly` 与 `ActionDescriptor` 保留为 JSON 对象，具体字段由后续对应模块定义。
+- `ActionDescriptor` 保留为 JSON 对象。L0 仍把 `ContextAssembly` 作为开放 JSON 对象；TypeScript 参考实现定义了可检查的 messages、tools、阶段、segment、来源、token 与能力降级字段。
 - `TextOrToolDelta` 分为 `{ kind: "text", text }` 与 `{ kind: "tool", toolCallDelta }`；工具增量暂保留为任意 JSON 值。
 - `ToolResult`、工具 `args` 是任意 JSON 值，不接受 `undefined`、函数等非 JSON 数据。
 - `EventRange` 使用包含端点的 `fromSeq` 与 `toSeq`，并满足 `0 <= fromSeq <= toSeq < compaction event seq`。跨字段大小关系由投影语义校验。
-- `StopReason` 当前只约束为非空字符串；正式枚举留待 AgentLoop 契约定义。
+- `StopReason` 当前只约束为非空字符串；`budget` 是预留取值，M0-3 不实现预算硬上限，计划在 M1 实现；正式枚举留待 AgentLoop 契约定义。
 
 AgentLoop 事件使用以下关联与记账字段：
 
 - `step.started` 必须包含 `turnId`、`stepId`、从 1 开始的 `stepIndex`，以及本步消费的 `injectedInputs`。`injectedInputs` 是可为空的 `UserInput` 数组；每一项都进入消息历史投影，使 Steering 可以在恢复后重建。
-- `step.finished` 必须与活动 step 匹配，并包含 `outcome` 与 `usage`。`outcome` 为 `succeeded`、`failed` 或 `aborted`。
+- `step.finished` 必须与活动 step 匹配，并包含 `outcome` 与 `usage`。`outcome` 为 `succeeded`、`failed` 或 `aborted`。`succeeded` 表示 step 的控制流程完整结束，不表示其中每个工具的业务结果都成功。
 - `usage` 必须包含非负整数 `inputTokens`、`outputTokens` 与 `totalTokens`；可选 `cost` 使用非负 `amount` 和非空 `currency`。`turn.finished.usage` 是各步用量的累计值。
 - `model.request.toolUse` 记录实际采用的工具调用模式。值为 `prompted` 时表示已使用文本协议降级；`capabilityDowngrades` 记录可读的降级说明。
 - `requestId`、工具与审批事件上的 `stepId` / `callId` 用于跨事件关联。它们对 M0-1 数据保持可选，M0-2 AgentLoop 产生的新事件应完整填写。
 - `tool.call.modelUsage` 在工具副作用前复制已完成模型调用的用量。恢复流程用它补写 `step.finished.usage`；旧事件可不包含该字段。
-- `tool.result.outcome` 为 `succeeded`、`failed` 或 `denied`；`attempts` 从 1 开始。既有 `result` 字段保持必填和开放 JSON 值，以便读取 M0-1 数据。
+- `tool.result.outcome` 为 `succeeded`、`failed` 或 `denied`；`attempts` 从 1 开始。既有 `result` 字段保持必填和开放 JSON 值，以便读取 M0-1 数据。`failed` 且不含 `error` 表示工具正常完成后的结果失败；同时包含 `error` 表示工具执行失败。
+- `compaction.applied.strategy` 可选记录生成摘要的 Strategy 名；旧事件没有该字段时，投影不得根据当前配置推断来源。
 
 ### AgentLoop replay 不变量
 
@@ -68,6 +69,8 @@ Session 状态由事件流投影，不单独持久化。replay 至少执行以�
 - 工具调用、审批、turn 或 step 可以在流尾保持未完成。这样的事件流是合法恢复前缀，不因缺少后续结束事件而拒绝。
 
 流尾存在 `tool.call` 但没有 `tool.result` 时，只能断定调用结果未知。恢复策略可以重试或写入失败结果；副作用与幂等语义由 AgentLoop 恢复 ADR 规定。
+
+`compaction.applied` 是唯一持久化的 compaction 事件，也是状态投影确认压缩生效的唯一依据。协议不定义 `compaction.started` / `compaction.finished`，状态投影也不引入 `compacting` 瞬时状态；写入 `compaction.applied` 前发生中断，不产生可重放的压缩结果。
 
 Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。摘要分别记录 `contentRanges` 与 `compactionSeqs`：`contentRanges` 只包含被折叠且实际产生消息投影条目的内容事件，`compactionSeqs` 只包含被折叠的旧 `compaction.applied` 事件序号。显式折叠或替换旧摘要时，新摘要继承其两类记录，并把旧摘要自身的事件序号加入 `compactionSeqs`，但不得把这些元事件序号混入内容覆盖。物化摘要中的 `dropped` 仍是最近一次 `compaction.applied` 声明的原始区间，不表示完整内容覆盖。仍使用旧 `representedRanges` 的快照无法无损区分内容与元事件，恢复时必须拒绝该快照并从 EventLog 完整重放。
 

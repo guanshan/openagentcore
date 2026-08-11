@@ -35,6 +35,12 @@ export type {
   CheckpointCreatedEvent,
   CompactionAppliedEvent,
   ContextAssembly,
+  ContextAssemblyMessage,
+  ContextAssemblyTool,
+  ContextSegment,
+  ContextSegmentSource,
+  ContextStageId,
+  ContextStageSnapshot,
   EventRange,
   JsonObject,
   JsonPrimitive,
@@ -61,6 +67,25 @@ export type {
   UserInput,
 } from './events/types.js';
 
+export {
+  BUILTIN_PROMPTS,
+  BUILTIN_PROMPT_SOURCE,
+  BUILTIN_PROMPT_SOURCE_VERSION,
+  createDefaultPromptRegistry,
+} from './prompts/builtins.js';
+export { PROMPT_SOURCE_KINDS, PromptRegistry, PromptRegistryError } from './prompts/registry.js';
+export type {
+  Prompt,
+  PromptContribution,
+  PromptDefinition,
+  PromptOverrideMode,
+  PromptRegistrySnapshot,
+  PromptSourceInfo,
+  PromptSourceKind,
+  PromptSourceRef,
+  PromptSourceSnapshot,
+} from './prompts/registry.js';
+
 export { ScriptedModelExhaustedError, ScriptedModelPort } from './ports/model.js';
 export type {
   FinishModelChunk,
@@ -81,10 +106,18 @@ export type {
   UsageModelChunk,
 } from './ports/model.js';
 
-export { EchoTool, FailingTool, SlowTool, ToolRegistry, ToolRegistryError } from './tools/tool.js';
+export {
+  EchoTool,
+  FailingTool,
+  ResultFailingTool,
+  SlowTool,
+  ToolRegistry,
+  ToolRegistryError,
+} from './tools/tool.js';
 export type {
   Tool,
   ToolExecutionRequest,
+  ToolExecutionResult,
   ToolPermissionDescriptor,
   ToolPort,
   ToolRegistrationOptions,
@@ -124,8 +157,10 @@ export type {
   PermissionStrategyOutput,
   PolicyFileConfig,
   PolicyRule,
+  RetryAction,
   RetryDecision,
   RetryOperation,
+  RetryOperationOverride,
   RetryStrategyInput,
   SlidingWindowCompactionConfig,
   StopDecision,
@@ -148,6 +183,7 @@ export type {
   MiddlewareBaseContext,
   MiddlewareContextMap,
   MiddlewareKind,
+  MiddlewareExecutionMode,
   MiddlewareNext,
   ModelMiddlewareContext,
   ToolMiddlewareContext,
@@ -185,10 +221,13 @@ export {
   PROMPTED_TOOL_CALL_PREFIX,
   UnknownToolResultError,
 } from './loop/agent-loop.js';
+export { formatContextAssembly } from './loop/context.js';
 export type {
   AgentLoopOptions,
   AgentLoopSleeper,
   AgentLoopStrategySelections,
+  DryRunContextOptions,
+  DryRunContextResult,
   RunTurnOptions,
   StrategySelection,
   TurnResult,
