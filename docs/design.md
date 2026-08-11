@@ -201,7 +201,7 @@ abstract class AgentLoop {
 
 ### 4.3 Session 状态机（State 模式）
 
-`idle → running → waiting_approval → running → compacting → ... → done | failed | aborted`。状态转移由事件驱动，非法转移在类型层面被拒绝。恢复时状态从事件流推导，不单独持久化（避免双写不一致）。
+`idle → running → waiting_approval → running → ... → done | failed | aborted`。状态转移由事件驱动，非法转移在类型层面被拒绝。恢复时状态从事件流推导，不单独持久化（避免双写不一致）。压缩不引入 `compacting` 瞬时状态，也不定义 `compaction.started` / `compaction.finished` 事件；只有已完成的 `compaction.applied` 会持久化并参与状态投影。
 
 ---
 
@@ -458,7 +458,7 @@ history → [memory 注入] → [skill 注入] → [compaction] → [slot 拼装
 
 - 直接采用 **OpenTelemetry GenAI 语义约定**为唯一内部标准；腾讯云 APM、阿里云 SLS、火山 APMPlus、Langfuse 全部只是 exporter 配置，不为任何一家单独设计埋点。
 - 三类信号：Trace（step 级 span 树）、Metrics（token/成本/延迟/策略效果）、事件流本身（可外发到消息队列）。
-- 成本核算：per-session / per-tenant / per-strategy 的 token 记账，预算硬上限触发 `turn.finished(stopReason: budget)`。
+- 成本核算：per-session / per-tenant / per-strategy 的 token 记账；预算硬上限计划在 M1 实现，触发 `turn.finished(stopReason: budget)`。
 
 ---
 

@@ -44,7 +44,7 @@
 - `TextOrToolDelta` 分为 `{ kind: "text", text }` 与 `{ kind: "tool", toolCallDelta }`；工具增量暂保留为任意 JSON 值。
 - `ToolResult`、工具 `args` 是任意 JSON 值，不接受 `undefined`、函数等非 JSON 数据。
 - `EventRange` 使用包含端点的 `fromSeq` 与 `toSeq`，并满足 `0 <= fromSeq <= toSeq < compaction event seq`。跨字段大小关系由投影语义校验。
-- `StopReason` 当前只约束为非空字符串；正式枚举留待 AgentLoop 契约定义。
+- `StopReason` 当前只约束为非空字符串；`budget` 是预留取值，M0-3 不实现预算硬上限，计划在 M1 实现；正式枚举留待 AgentLoop 契约定义。
 
 AgentLoop 事件使用以下关联与记账字段：
 
@@ -68,6 +68,8 @@ Session 状态由事件流投影，不单独持久化。replay 至少执行以�
 - 工具调用、审批、turn 或 step 可以在流尾保持未完成。这样的事件流是合法恢复前缀，不因缺少后续结束事件而拒绝。
 
 流尾存在 `tool.call` 但没有 `tool.result` 时，只能断定调用结果未知。恢复策略可以重试或写入失败结果；副作用与幂等语义由 AgentLoop 恢复 ADR 规定。
+
+`compaction.applied` 是唯一持久化的 compaction 事件，也是状态投影确认压缩生效的唯一依据。协议不定义 `compaction.started` / `compaction.finished`，状态投影也不引入 `compacting` 瞬时状态；写入 `compaction.applied` 前发生中断，不产生可重放的压缩结果。
 
 Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。摘要分别记录 `contentRanges` 与 `compactionSeqs`：`contentRanges` 只包含被折叠且实际产生消息投影条目的内容事件，`compactionSeqs` 只包含被折叠的旧 `compaction.applied` 事件序号。显式折叠或替换旧摘要时，新摘要继承其两类记录，并把旧摘要自身的事件序号加入 `compactionSeqs`，但不得把这些元事件序号混入内容覆盖。物化摘要中的 `dropped` 仍是最近一次 `compaction.applied` 声明的原始区间，不表示完整内容覆盖。仍使用旧 `representedRanges` 的快照无法无损区分内容与元事件，恢复时必须拒绝该快照并从 EventLog 完整重放。
 
