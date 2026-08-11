@@ -1,0 +1,14 @@
+{
+  "description": "Every persisted event must contain the common tenantId field.",
+  "expected": "schema-rejected",
+  "events": [
+    {
+      "type": "turn.started",
+      "seq": 1,
+      "sessionId": "session-missing-tenant",
+      "ts": "2026-08-11T03:10:00Z",
+      "turnId": "turn-1",
+      "input": { "content": "Missing tenant." }
+    }
+  ]
+}

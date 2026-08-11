@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentcore.dev/spec/schemas/agent-event.v0.json",
+  "title": "OpenAgentCore AgentEvent v0",
+  "oneOf": [
+    { "$ref": "#/$defs/turnStarted" },
+    { "$ref": "#/$defs/modelRequest" },
+    { "$ref": "#/$defs/modelDelta" },
+    { "$ref": "#/$defs/toolCall" },
+    { "$ref": "#/$defs/toolResult" },
+    { "$ref": "#/$defs/permissionRequested" },
+    { "$ref": "#/$defs/permissionResolved" },
+    { "$ref": "#/$defs/compactionApplied" },
+    { "$ref": "#/$defs/checkpointCreated" },
+    { "$ref": "#/$defs/turnFinished" }
+  ],
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "jsonValue": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/jsonValue" }
+        },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+        }
+      ]
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "baseEvent": {
+      "type": "object",
+      "required": ["type", "seq", "tenantId", "sessionId", "ts"],
+      "properties": {
+        "type": { "type": "string" },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tenantId": { "$ref": "#/$defs/nonEmptyString" },
+        "sessionId": { "$ref": "#/$defs/nonEmptyString" },
+        "ts": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "userInput": {
+      "type": "object",
+      "required": ["content"],
+      "properties": {
+        "content": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "textOrToolDelta": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "text"],
+          "properties": {
+            "kind": { "const": "text" },
+            "text": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "toolCallDelta"],
+          "properties": {
+            "kind": { "const": "tool" },
+            "toolCallDelta": { "$ref": "#/$defs/jsonValue" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "eventRange": {
+      "type": "object",
+      "required": ["fromSeq", "toSeq"],
+      "properties": {
+        "fromSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toSeq": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "turnStarted": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["turnId", "input"],
+          "properties": {
+            "type": { "const": "turn.started" },
+            "turnId": { "$ref": "#/$defs/nonEmptyString" },
+            "input": { "$ref": "#/$defs/userInput" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "modelRequest": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["stepId", "assembled"],
+          "properties": {
+            "type": { "const": "model.request" },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "assembled": { "$ref": "#/$defs/jsonObject" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "modelDelta": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["stepId", "delta"],
+          "properties": {
+            "type": { "const": "model.delta" },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "delta": { "$ref": "#/$defs/textOrToolDelta" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolCall": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["callId", "tool", "args"],
+          "properties": {
+            "type": { "const": "tool.call" },
+            "callId": { "$ref": "#/$defs/nonEmptyString" },
+            "tool": { "$ref": "#/$defs/nonEmptyString" },
+            "args": { "$ref": "#/$defs/jsonValue" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolResult": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["callId", "result"],
+          "properties": {
+            "type": { "const": "tool.result" },
+            "callId": { "$ref": "#/$defs/nonEmptyString" },
+            "result": { "$ref": "#/$defs/jsonValue" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "permissionRequested": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["reqId", "action"],
+          "properties": {
+            "type": { "const": "permission.requested" },
+            "reqId": { "$ref": "#/$defs/nonEmptyString" },
+            "action": { "$ref": "#/$defs/jsonObject" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "permissionResolved": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["reqId", "decision"],
+          "properties": {
+            "type": { "const": "permission.resolved" },
+            "reqId": { "$ref": "#/$defs/nonEmptyString" },
+            "decision": {
+              "enum": ["allow", "deny"]
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "compactionApplied": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["summary", "dropped"],
+          "properties": {
+            "type": { "const": "compaction.applied" },
+            "summary": { "type": "string" },
+            "dropped": { "$ref": "#/$defs/eventRange" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "checkpointCreated": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["snapshotRef"],
+          "properties": {
+            "type": { "const": "checkpoint.created" },
+            "snapshotRef": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "turnFinished": {
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["turnId", "stopReason"],
+          "properties": {
+            "type": { "const": "turn.finished" },
+            "turnId": { "$ref": "#/$defs/nonEmptyString" },
+            "stopReason": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

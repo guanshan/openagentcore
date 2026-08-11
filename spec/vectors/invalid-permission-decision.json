@@ -1,0 +1,15 @@
+{
+  "description": "Permission decisions outside allow and deny are rejected.",
+  "expected": "schema-rejected",
+  "events": [
+    {
+      "type": "permission.resolved",
+      "seq": 1,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-invalid-decision",
+      "ts": "2026-08-11T04:00:00Z",
+      "reqId": "permission-1",
+      "decision": "ask"
+    }
+  ]
+}

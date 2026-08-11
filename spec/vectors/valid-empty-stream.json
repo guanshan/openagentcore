@@ -1,0 +1,5 @@
+{
+  "description": "An empty event stream is valid.",
+  "expected": "accepted",
+  "events": []
+}
