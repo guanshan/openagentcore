@@ -102,6 +102,7 @@
       "additionalProperties": false
     },
     "turnStarted": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {
@@ -117,6 +118,7 @@
       "unevaluatedProperties": false
     },
     "modelRequest": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {
@@ -132,6 +134,7 @@
       "unevaluatedProperties": false
     },
     "modelDelta": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {
@@ -147,6 +150,7 @@
       "unevaluatedProperties": false
     },
     "toolCall": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {
@@ -163,6 +167,7 @@
       "unevaluatedProperties": false
     },
     "toolResult": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {
@@ -178,6 +183,7 @@
       "unevaluatedProperties": false
     },
     "permissionRequested": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {
@@ -193,6 +199,7 @@
       "unevaluatedProperties": false
     },
     "permissionResolved": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {
@@ -210,6 +217,7 @@
       "unevaluatedProperties": false
     },
     "compactionApplied": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {
@@ -225,6 +233,7 @@
       "unevaluatedProperties": false
     },
     "checkpointCreated": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {
@@ -239,6 +248,7 @@
       "unevaluatedProperties": false
     },
     "turnFinished": {
+      "type": "object",
       "allOf": [
         { "$ref": "#/$defs/baseEvent" },
         {

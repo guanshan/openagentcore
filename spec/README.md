@@ -34,12 +34,14 @@
 - `ContextAssembly` 与 `ActionDescriptor` 保留为 JSON 对象，具体字段由后续对应模块定义。
 - `TextOrToolDelta` 分为 `{ kind: "text", text }` 与 `{ kind: "tool", toolCallDelta }`；工具增量暂保留为任意 JSON 值。
 - `ToolResult`、工具 `args` 是任意 JSON 值，不接受 `undefined`、函数等非 JSON 数据。
-- `EventRange` 使用包含端点的 `fromSeq` 与 `toSeq`。
+- `EventRange` 使用包含端点的 `fromSeq` 与 `toSeq`，并满足 `0 <= fromSeq <= toSeq < compaction event seq`。跨字段大小关系由投影语义校验。
 - `StopReason` 当前只约束为非空字符串；正式枚举留待 AgentLoop 契约定义。
+
+Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。重复或扩大已摘要的完整区间会替换旧摘要；显式折叠旧 `compaction.applied` 事件时，新摘要继承其代表的历史区间；只与现有摘要区间部分重叠的事件流会被投影拒绝。
 
 ## Trajectory v0
 
-`trajectory.v0.json` 包含 `metadata` 与 `events`。`metadata.specVersion` 使用完整 SemVer，并记录 `tenantId`、`sessionId` 与非空的 `agentDefinitionSummary`。具体支持版本由消费者的 spec 版本锁判断。空事件流合法；非空事件流必须与元数据属于同一租户和会话，该跨项约束由一致性测试实现。
+`trajectory.v0.json` 包含 `metadata` 与 `events`。`metadata.specVersion` 使用完整 SemVer，并记录 `tenantId`、`sessionId` 与非空的 `agentDefinitionSummary`。具体支持版本由消费者的 spec 版本锁判断。空事件流合法；非空事件流必须与元数据属于同一租户和会话。JSON Schema 无法表达该跨项相等约束，一致性测试实现必须另行校验。
 
 ## 一致性测试向量
 
@@ -63,6 +65,8 @@
 
 1. 每个事件必须通过 `agent-event.v0.json`。
 2. 整条流必须属于同一租户和会话，且 `seq` 严格递增。
+
+一致性测试运行器必须启用 JSON Schema 标准 format 的断言语义，确保 `date-time` 不是仅作注解。编译 `trajectory.v0.json` 前，必须先按 `$id` 注册 `agent-event.v0.json`，或提供等价的 Schema resolver。
 
 参考实现的测试自动发现并消费本目录下的全部 JSON 文件。
 
