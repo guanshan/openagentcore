@@ -1,6 +1,6 @@
 import { access, unlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
