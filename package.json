@@ -11,7 +11,7 @@
     "changeset": "changeset",
     "example:replay": "pnpm --filter @openagentcore/replay-demo replay",
     "lint": "eslint . && prettier --check --no-error-on-unmatched-pattern package.json pnpm-workspace.yaml tsconfig.base.json vitest.config.mts eslint.config.mjs dependency-cruiser.config.mjs structure-lint.mjs .changeset .github spec packages/kernel examples/replay-demo && pnpm lint:boundaries && pnpm lint:structure",
-    "lint:boundaries": "depcruise --config dependency-cruiser.config.mjs packages/kernel examples",
+    "lint:boundaries": "depcruise --config dependency-cruiser.config.mjs packages/kernel examples providers",
     "lint:structure": "node structure-lint.mjs",
     "test": "vitest run",
     "typecheck": "pnpm -r --if-present run typecheck"

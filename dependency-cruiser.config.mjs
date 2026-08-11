@@ -11,6 +11,13 @@ const config = {
       },
     },
     {
+      name: 'kernel-does-not-import-workspace-specifiers',
+      severity: 'error',
+      comment: 'Unresolved bare workspace imports must remain visible to boundary validation.',
+      from: { path: '^packages/kernel(?:/|$)' },
+      to: { path: '^@openagentcore/(?!kernel(?:/|$))' },
+    },
+    {
       name: 'no-imports-from-forbidden-directories',
       severity: 'error',
       from: {},
