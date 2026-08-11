@@ -2,8 +2,6 @@ import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import type { AnySchema } from 'ajv';
-import { Ajv2020 } from 'ajv/dist/2020.js';
-import * as formatsModule from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
 
 import { EventLogInvariantError, InMemoryEventLog } from './event-log.js';
@@ -13,9 +11,9 @@ import {
   projectMessageHistory,
   ProjectionInvariantError,
 } from './projection.js';
+import { agentEventSchemaId, createSpecAjv } from './schema.test-support.js';
 import type { AgentEvent, AgentEventType, Trajectory } from './types.js';
 
-const eventSchemaId = 'https://openagentcore.dev/spec/schemas/agent-event.v0.json';
 const specDirectory = fileURLToPath(new URL('../../../../spec/', import.meta.url));
 const vectorDirectory = fileURLToPath(new URL('../../../../spec/vectors/', import.meta.url));
 
@@ -33,13 +31,11 @@ const agentEventSchema = await readJson<AnySchema>(`${specDirectory}schemas/agen
 const trajectorySchema = await readJson<AnySchema>(`${specDirectory}schemas/trajectory.v0.json`);
 const vectors = await loadVectors();
 
-const ajv = new Ajv2020({ allErrors: true, strict: true });
-const addFormats = formatsModule.default as unknown as (instance: Ajv2020) => Ajv2020;
-addFormats(ajv);
+const ajv = createSpecAjv();
 ajv.addSchema(agentEventSchema);
-const validateEvent = ajv.getSchema<AgentEvent>(eventSchemaId);
+const validateEvent = ajv.getSchema<AgentEvent>(agentEventSchemaId);
 if (validateEvent === undefined) {
-  throw new Error(`Schema not registered: ${eventSchemaId}`);
+  throw new Error(`Schema not registered: ${agentEventSchemaId}`);
 }
 const validateTrajectory = ajv.compile<Trajectory>(trajectorySchema);
 

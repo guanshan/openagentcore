@@ -8,7 +8,7 @@ import {
   projectMessageHistory,
   ProjectionInvariantError,
 } from './projection.js';
-import { assertSchemaValidEvent } from './schema.test-support.js';
+import { assertSchemaValidEvent, collect } from './schema.test-support.js';
 import { InMemorySnapshotStore } from './snapshot-store.js';
 import type {
   AgentEvent,
@@ -376,11 +376,3 @@ describe('projection recovery', () => {
     expect(restored).toEqual(projected);
   });
 });
-
-async function collect(events: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
-  const collected: AgentEvent[] = [];
-  for await (const event of events) {
-    collected.push(event);
-  }
-  return collected;
-}

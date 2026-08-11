@@ -7,14 +7,29 @@ import * as formatsModule from 'ajv-formats';
 
 import type { AgentEvent } from './types.js';
 
-const schemaPath = fileURLToPath(
+export const agentEventSchemaId = 'https://openagentcore.dev/spec/schemas/agent-event.v0.json';
+
+const agentEventSchemaPath = fileURLToPath(
   new URL('../../../../spec/schemas/agent-event.v0.json', import.meta.url),
 );
-const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as AnySchema;
-const ajv = new Ajv2020({ allErrors: true, strict: true });
+const agentEventSchema = JSON.parse(readFileSync(agentEventSchemaPath, 'utf8')) as AnySchema;
 const addFormats = formatsModule.default as unknown as (instance: Ajv2020) => Ajv2020;
-addFormats(ajv);
-const validate = ajv.compile<AgentEvent>(schema);
+
+export function createSpecAjv(): Ajv2020 {
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
+  addFormats(ajv);
+  return ajv;
+}
+
+export async function collect<TValue>(values: AsyncIterable<TValue>): Promise<TValue[]> {
+  const collected: TValue[] = [];
+  for await (const value of values) {
+    collected.push(value);
+  }
+  return collected;
+}
+
+const validate = createSpecAjv().compile<AgentEvent>(agentEventSchema);
 
 export function assertSchemaValidEvent<TEvent extends AgentEvent>(event: TEvent): TEvent {
   if (!validate(event)) {

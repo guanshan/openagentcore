@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { EventLogInvariantError, InMemoryEventLog } from './event-log.js';
-import { assertSchemaValidEvent } from './schema.test-support.js';
-import type { AgentEvent, TurnStartedEvent } from './types.js';
+import { assertSchemaValidEvent, collect } from './schema.test-support.js';
+import type { TurnStartedEvent } from './types.js';
 
 const identity = {
   tenantId: 'tenant-test',
@@ -18,14 +18,6 @@ function turnStarted(seq: number): TurnStartedEvent {
     turnId: 'turn-1',
     input: { content: 'Hello.' },
   });
-}
-
-async function collect(events: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
-  const collected: AgentEvent[] = [];
-  for await (const event of events) {
-    collected.push(event);
-  }
-  return collected;
 }
 
 describe('InMemoryEventLog', () => {
