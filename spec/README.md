@@ -6,7 +6,7 @@
 
 ## Schema 版本与 `$id`
 
-- spec 发行版本使用 SemVer，首个版本为 `0.1.0`；本次向后兼容增补后的版本为 `0.2.0`。
+- spec 发行版本使用 SemVer，首个版本为 `0.1.0`；本次向后兼容增补后的版本为 `0.3.0`。
 - Schema 文件名使用 `<name>.v<major>.json`；`v0` 表示当前实验性契约代际，不等同于 spec 发行版本。
 - Schema 的规范 `$id` 为 `https://openagentcore.dev/spec/schemas/<filename>`，与仓库文件名一一对应。
 - 当前 Schema 使用 JSON Schema 2020-12；顶层协议对象默认封闭，未声明字段会被拒绝。
@@ -40,7 +40,7 @@
 本代际对 design.md §4.1 中尚未展开的类型采用以下最小定义：
 
 - `UserInput` 是带字符串 `content` 的封闭对象。
-- `ContextAssembly` 与 `ActionDescriptor` 保留为 JSON 对象，具体字段由后续对应模块定义。
+- `ActionDescriptor` 保留为 JSON 对象。L0 仍把 `ContextAssembly` 作为开放 JSON 对象；TypeScript 参考实现定义了可检查的 messages、tools、阶段、segment、来源、token 与能力降级字段。
 - `TextOrToolDelta` 分为 `{ kind: "text", text }` 与 `{ kind: "tool", toolCallDelta }`；工具增量暂保留为任意 JSON 值。
 - `ToolResult`、工具 `args` 是任意 JSON 值，不接受 `undefined`、函数等非 JSON 数据。
 - `EventRange` 使用包含端点的 `fromSeq` 与 `toSeq`，并满足 `0 <= fromSeq <= toSeq < compaction event seq`。跨字段大小关系由投影语义校验。
@@ -55,6 +55,7 @@ AgentLoop 事件使用以下关联与记账字段：
 - `requestId`、工具与审批事件上的 `stepId` / `callId` 用于跨事件关联。它们对 M0-1 数据保持可选，M0-2 AgentLoop 产生的新事件应完整填写。
 - `tool.call.modelUsage` 在工具副作用前复制已完成模型调用的用量。恢复流程用它补写 `step.finished.usage`；旧事件可不包含该字段。
 - `tool.result.outcome` 为 `succeeded`、`failed` 或 `denied`；`attempts` 从 1 开始。既有 `result` 字段保持必填和开放 JSON 值，以便读取 M0-1 数据。`failed` 且不含 `error` 表示工具正常完成后的结果失败；同时包含 `error` 表示工具执行失败。
+- `compaction.applied.strategy` 可选记录生成摘要的 Strategy 名；旧事件没有该字段时，投影不得根据当前配置推断来源。
 
 ### AgentLoop replay 不变量
 

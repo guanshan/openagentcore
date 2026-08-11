@@ -390,7 +390,7 @@ System prompt 是 **slot 树（Composite 模式）**：`identity / capabilities 
 
 ### 8.2 版本、热更新与实验
 
-- Prompt 可来自内置默认 / 文件目录 / 远端配置中心，带版本号；文件变更热加载，不重启不发版。
+- Prompt 可来自内置默认 / 文件目录 / 运行时注入，带版本号；Kernel 提供原子来源替换接口，文件监听与远端配置同步由 Runtime 实现。
 - 与 eval 框架（§13）打通：同一录制 trajectory 上 A/B 两个 prompt 版本，diff 行为与指标。
 
 ### 8.3 Context 组装管道（Pipeline，调 prompt 的显微镜）
@@ -398,10 +398,15 @@ System prompt 是 **slot 树（Composite 模式）**：`identity / capabilities 
 Context 组装是显式的多阶段管道，每阶段产物可检查：
 
 ```text
-history → [memory 注入] → [skill 注入] → [compaction] → [slot 拼装] → [middleware 终审] → messages
+history → [memory 注入] → [skill 注入] → [compaction] → [slot 拼装] → [context middleware] → [model middleware] → messages
 ```
 
-**Dry-run 模式**输出 `ContextAssembly` 报告：最终 messages 全文、每段来源（哪个 slot/策略产生）、逐段 token 数、发生过的降级。没有这个，上游调 prompt 等于闭眼开车。
+**Dry-run 模式**输出 `ContextAssembly` 报告：最终 messages 全文、每段来源（哪个 slot/策略产生）、逐段 token 数、发生过的降级。该报告是上游调试 Prompt 的统一检查入口。
+
+```ts
+const { report } = await loop.dryRunContext({ content: 'Inspect the next request.' });
+console.log(report);
+```
 
 ---
 
