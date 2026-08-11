@@ -4,6 +4,8 @@
   "title": "OpenAgentCore AgentEvent v0",
   "oneOf": [
     { "$ref": "#/$defs/turnStarted" },
+    { "$ref": "#/$defs/stepStarted" },
+    { "$ref": "#/$defs/stepFinished" },
     { "$ref": "#/$defs/modelRequest" },
     { "$ref": "#/$defs/modelDelta" },
     { "$ref": "#/$defs/toolCall" },
@@ -64,6 +66,38 @@
       },
       "additionalProperties": false
     },
+    "modelCost": {
+      "type": "object",
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": {
+          "type": "number",
+          "minimum": 0
+        },
+        "currency": { "$ref": "#/$defs/nonEmptyString" }
+      },
+      "additionalProperties": false
+    },
+    "modelUsage": {
+      "type": "object",
+      "required": ["inputTokens", "outputTokens", "totalTokens"],
+      "properties": {
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost": { "$ref": "#/$defs/modelCost" }
+      },
+      "additionalProperties": false
+    },
     "textOrToolDelta": {
       "oneOf": [
         {
@@ -118,6 +152,50 @@
       ],
       "unevaluatedProperties": false
     },
+    "stepStarted": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["turnId", "stepId", "stepIndex", "injectedInputs"],
+          "properties": {
+            "type": { "const": "step.started" },
+            "turnId": { "$ref": "#/$defs/nonEmptyString" },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "stepIndex": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "injectedInputs": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/userInput" }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "stepFinished": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["turnId", "stepId", "outcome", "usage"],
+          "properties": {
+            "type": { "const": "step.finished" },
+            "turnId": { "$ref": "#/$defs/nonEmptyString" },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "outcome": {
+              "enum": ["succeeded", "failed", "aborted"]
+            },
+            "usage": { "$ref": "#/$defs/modelUsage" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
     "modelRequest": {
       "type": "object",
       "allOf": [
@@ -128,7 +206,15 @@
           "properties": {
             "type": { "const": "model.request" },
             "stepId": { "$ref": "#/$defs/nonEmptyString" },
-            "assembled": { "$ref": "#/$defs/jsonObject" }
+            "assembled": { "$ref": "#/$defs/jsonObject" },
+            "requestId": { "$ref": "#/$defs/nonEmptyString" },
+            "toolUse": {
+              "enum": ["native", "prompted", "none"]
+            },
+            "capabilityDowngrades": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/nonEmptyString" }
+            }
           }
         }
       ],
@@ -144,7 +230,8 @@
           "properties": {
             "type": { "const": "model.delta" },
             "stepId": { "$ref": "#/$defs/nonEmptyString" },
-            "delta": { "$ref": "#/$defs/textOrToolDelta" }
+            "delta": { "$ref": "#/$defs/textOrToolDelta" },
+            "requestId": { "$ref": "#/$defs/nonEmptyString" }
           }
         }
       ],
@@ -161,7 +248,8 @@
             "type": { "const": "tool.call" },
             "callId": { "$ref": "#/$defs/nonEmptyString" },
             "tool": { "$ref": "#/$defs/nonEmptyString" },
-            "args": { "$ref": "#/$defs/jsonValue" }
+            "args": { "$ref": "#/$defs/jsonValue" },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" }
           }
         }
       ],
@@ -177,7 +265,16 @@
           "properties": {
             "type": { "const": "tool.result" },
             "callId": { "$ref": "#/$defs/nonEmptyString" },
-            "result": { "$ref": "#/$defs/jsonValue" }
+            "result": { "$ref": "#/$defs/jsonValue" },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "outcome": {
+              "enum": ["succeeded", "failed", "denied"]
+            },
+            "error": { "$ref": "#/$defs/jsonValue" },
+            "attempts": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         }
       ],
@@ -193,7 +290,10 @@
           "properties": {
             "type": { "const": "permission.requested" },
             "reqId": { "$ref": "#/$defs/nonEmptyString" },
-            "action": { "$ref": "#/$defs/jsonObject" }
+            "action": { "$ref": "#/$defs/jsonObject" },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "callId": { "$ref": "#/$defs/nonEmptyString" },
+            "reason": { "$ref": "#/$defs/nonEmptyString" }
           }
         }
       ],
@@ -211,7 +311,10 @@
             "reqId": { "$ref": "#/$defs/nonEmptyString" },
             "decision": {
               "enum": ["allow", "deny"]
-            }
+            },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "callId": { "$ref": "#/$defs/nonEmptyString" },
+            "reason": { "$ref": "#/$defs/nonEmptyString" }
           }
         }
       ],
@@ -258,7 +361,8 @@
           "properties": {
             "type": { "const": "turn.finished" },
             "turnId": { "$ref": "#/$defs/nonEmptyString" },
-            "stopReason": { "$ref": "#/$defs/nonEmptyString" }
+            "stopReason": { "$ref": "#/$defs/nonEmptyString" },
+            "usage": { "$ref": "#/$defs/modelUsage" }
           }
         }
       ],
