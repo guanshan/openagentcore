@@ -63,6 +63,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kernel
 
+  packages/coding:
+    devDependencies:
+      '@openagentcore/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+
   packages/kernel:
     devDependencies:
       ajv:
