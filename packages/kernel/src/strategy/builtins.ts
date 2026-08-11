@@ -1,4 +1,5 @@
 import type { EventRange, JsonValue } from '../events/types.js';
+import { ModelPortError } from '../ports/model.js';
 import type { ToolPermissionDescriptor } from '../tools/tool.js';
 import {
   StrategyRegistry,
@@ -372,7 +373,11 @@ export class ExponentialBackoffRetryStrategy implements Strategy<
     const operation = config.operationOverrides[input.operation];
     const maxAttempts = operation?.maxAttempts ?? config.maxAttempts;
     this.#evaluations += 1;
-    if (input.attempt >= maxAttempts) {
+    const modelError =
+      input.operation === 'model' && input.error instanceof ModelPortError
+        ? input.error
+        : undefined;
+    if (modelError?.retryable === false || input.attempt >= maxAttempts) {
       this.#exhausted += 1;
       return {
         action:
@@ -382,12 +387,14 @@ export class ExponentialBackoffRetryStrategy implements Strategy<
       };
     }
     this.#retries += 1;
+    const backoffDelay = Math.min(
+      config.maxDelayMs,
+      config.initialDelayMs * config.multiplier ** (input.attempt - 1),
+    );
     return {
       action: 'retry',
-      delayMs: Math.min(
-        config.maxDelayMs,
-        config.initialDelayMs * config.multiplier ** (input.attempt - 1),
-      ),
+      // Retry-After is a server minimum and therefore is not capped by maxDelayMs.
+      delayMs: Math.max(backoffDelay, modelError?.retryAfterMs ?? 0),
     };
   }
 

@@ -1,5 +1,11 @@
 import type { AgentEvent, JsonObject, JsonValue, ModelUsage, UserInput } from '../events/types.js';
-import type { ModelChunk, ModelRequest, ModelToolUse, ToolCallModelChunk } from '../ports/model.js';
+import {
+  ModelPortError,
+  type ModelChunk,
+  type ModelRequest,
+  type ModelToolUse,
+  type ToolCallModelChunk,
+} from '../ports/model.js';
 import type {
   PermissionStrategyInput,
   PermissionStrategyOutput,
@@ -7,7 +13,12 @@ import type {
   RetryStrategyInput,
 } from '../strategy/builtins.js';
 import type { Strategy, StrategyContext } from '../strategy/registry.js';
-import type { Tool, ToolExecutionRequest, ToolExecutionResult } from '../tools/tool.js';
+import {
+  ToolContractError,
+  type Tool,
+  type ToolExecutionRequest,
+  type ToolExecutionResult,
+} from '../tools/tool.js';
 import {
   assembleContext,
   contextDraftToModelRequest,
@@ -171,6 +182,9 @@ export async function executePersistedToolCall(
       );
     } catch (error) {
       if (error instanceof AgentLoopCrashError) {
+        throw error;
+      }
+      if (error instanceof ToolContractError) {
         throw error;
       }
       if (signal.aborted) {
@@ -470,23 +484,47 @@ async function callModel(
       outputTokens: 0,
       totalTokens: countedInputTokens,
     });
-    const iterator = runtime.model.stream(context.request, signal)[Symbol.asyncIterator]();
-    while (true) {
-      let next: IteratorResult<ModelChunk>;
-      try {
-        next = await iterator.next();
-      } catch (error) {
-        return { ok: false, error };
+    let iterator: AsyncIterator<ModelChunk>;
+    try {
+      iterator = runtime.model.stream(context.request, signal)[Symbol.asyncIterator]();
+    } catch (error) {
+      return { ok: false, error };
+    }
+    let completed = false;
+    try {
+      while (true) {
+        let next: IteratorResult<ModelChunk>;
+        try {
+          next = await iterator.next();
+        } catch (error) {
+          return { ok: false, error };
+        }
+        if (next.done) {
+          await flushPromptedText();
+          journal.assertComplete();
+          completed = true;
+          return { ok: true };
+        }
+        const chunk = next.value;
+        context.chunks.push(structuredClone(chunk));
+        recordedChunks += 1;
+        try {
+          await recordChunk(chunk);
+        } catch (error) {
+          if (error instanceof ModelPortError) {
+            return { ok: false, error };
+          }
+          throw error;
+        }
       }
-      if (next.done) {
-        await flushPromptedText();
-        journal.assertComplete();
-        return { ok: true };
+    } finally {
+      if (!completed) {
+        try {
+          await iterator.return?.();
+        } catch {
+          // Cleanup is best-effort and must not hide the model failure being handled.
+        }
       }
-      const chunk = next.value;
-      context.chunks.push(structuredClone(chunk));
-      await recordChunk(chunk);
-      recordedChunks += 1;
     }
   };
 
@@ -564,6 +602,20 @@ async function recordModelChunk(
       // Providers may send several snapshots; the last usage chunk is the step total.
       return { usage: structuredClone(chunk.usage) };
     case 'finish':
+      if (chunk.reason === 'content-filter') {
+        throw new ModelPortError(
+          'content-filter',
+          'Model response was blocked by content policy.',
+          {
+            retryable: false,
+          },
+        );
+      }
+      if (chunk.reason === 'error') {
+        throw new ModelPortError('service', 'Model stream finished with an error.', {
+          retryable: true,
+        });
+      }
       return {};
   }
 }
@@ -727,11 +779,48 @@ async function invokeTool(
     throw context.error;
   }
   if (context.result === undefined) {
-    throw new AgentLoopInvariantError(
-      `Tool middleware completed without a result for ${request.callId}.`,
+    throw new ToolContractError(tool.name, 'undefined');
+  }
+  return structuredClone(validateToolExecutionResult(tool.name, context.result));
+}
+
+function validateToolExecutionResult(tool: string, value: unknown): ToolExecutionResult {
+  if (value === null) {
+    throw new ToolContractError(tool, 'null');
+  }
+  if (Array.isArray(value)) {
+    throw new ToolContractError(tool, 'an array');
+  }
+  if (typeof value !== 'object') {
+    throw new ToolContractError(tool, typeof value);
+  }
+  const candidate = value as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(candidate, 'outcome')) {
+    throw new ToolContractError(tool, 'object without "outcome"');
+  }
+  if (candidate['outcome'] !== 'succeeded' && candidate['outcome'] !== 'failed') {
+    throw new ToolContractError(
+      tool,
+      `object with invalid "outcome" ${formatValue(candidate['outcome'])}`,
     );
   }
-  return structuredClone(context.result);
+  if (!Object.prototype.hasOwnProperty.call(candidate, 'result')) {
+    throw new ToolContractError(tool, 'object without "result"');
+  }
+  if (!isJsonValue(candidate['result'])) {
+    throw new ToolContractError(tool, 'object whose "result" is not JSON');
+  }
+  return {
+    outcome: candidate['outcome'],
+    result: structuredClone(candidate['result']),
+  };
+}
+
+function formatValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  return String(value);
 }
 
 function strategyContext(

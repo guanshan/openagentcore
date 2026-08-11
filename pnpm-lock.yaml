@@ -42,6 +42,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kernel
 
+  examples/first-real-provider:
+    dependencies:
+      '@openagentcore/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@openagentcore/standard':
+        specifier: workspace:*
+        version: link:../../providers/standard
+
   examples/minimal-agent:
     dependencies:
       '@openagentcore/kernel':
@@ -56,6 +65,18 @@ importers:
 
   packages/kernel:
     devDependencies:
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.20.0)
+
+  providers/standard:
+    devDependencies:
+      '@openagentcore/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       ajv:
         specifier: ^8.20.0
         version: 8.20.0

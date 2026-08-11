@@ -1,0 +1,57 @@
+{
+  "description": "令牌计数后完成一次文本流，保留归一化分块与相对时序",
+  "expected": "accepted",
+  "recording": {
+    "specVersion": "0.4.0",
+    "kind": "model-port-recording",
+    "capabilities": {
+      "streaming": true,
+      "toolUse": "native",
+      "promptCaching": false,
+      "structuredOutput": false,
+      "maxContext": 128000,
+      "vision": false
+    },
+    "redaction": {
+      "replacement": "[REDACTED]",
+      "sensitiveKeys": ["api-key", "authorization"],
+      "pointers": ["/metadata/private"]
+    },
+    "operations": [
+      {
+        "seq": 0,
+        "operation": "countTokens",
+        "request": {
+          "messages": [{ "role": "user", "content": "hello" }],
+          "tools": [],
+          "toolUse": "none",
+          "metadata": { "private": "[REDACTED]" }
+        },
+        "outcome": { "kind": "returned", "atMs": 1, "tokens": 2 }
+      },
+      {
+        "seq": 1,
+        "operation": "stream",
+        "request": {
+          "messages": [{ "role": "user", "content": "hello" }],
+          "tools": [],
+          "toolUse": "none",
+          "metadata": { "private": "[REDACTED]" }
+        },
+        "frames": [
+          { "kind": "chunk", "atMs": 3, "chunk": { "kind": "text", "text": "hello" } },
+          {
+            "kind": "chunk",
+            "atMs": 5,
+            "chunk": {
+              "kind": "usage",
+              "usage": { "inputTokens": 2, "outputTokens": 1, "totalTokens": 3 }
+            }
+          },
+          { "kind": "chunk", "atMs": 5, "chunk": { "kind": "finish", "reason": "stop" } },
+          { "kind": "completed", "atMs": 6 }
+        ]
+      }
+    ]
+  }
+}

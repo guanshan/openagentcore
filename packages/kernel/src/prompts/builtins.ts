@@ -1,6 +1,6 @@
 import { PromptRegistry, type PromptSourceSnapshot } from './registry.js';
 
-export const BUILTIN_PROMPT_SOURCE_VERSION = '1.0.0';
+export const BUILTIN_PROMPT_SOURCE_VERSION = '1.1.0';
 
 export const BUILTIN_PROMPTS = Object.freeze([
   {
@@ -56,8 +56,9 @@ export const BUILTIN_PROMPTS = Object.freeze([
   },
   {
     id: 'tool.protocol.prompted',
-    version: '1.0.0',
-    content: 'OAC_TOOL_CALL {"callId":"...","tool":"...","args":{}} emits one complete tool call.',
+    version: '1.1.0',
+    content:
+      'Emit exactly one complete tool call as OAC_TOOL_CALL {"callId":"...","tool":"...","args":{}}. Tool results are returned as OAC_TOOL_RESULT {"callId":"...","result":...}.',
   },
 ] as const);
 

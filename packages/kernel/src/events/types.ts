@@ -38,6 +38,13 @@ export interface ContextAssemblyMessage extends JsonObject {
   readonly content: string;
   readonly name?: string;
   readonly toolCallId?: string;
+  readonly toolCalls?: readonly ContextAssemblyToolCall[];
+}
+
+export interface ContextAssemblyToolCall extends JsonObject {
+  readonly callId: string;
+  readonly tool: string;
+  readonly args: JsonValue;
 }
 
 export interface ContextAssemblyTool extends JsonObject {
@@ -48,7 +55,14 @@ export interface ContextAssemblyTool extends JsonObject {
 
 export interface ContextSegmentSource extends JsonObject {
   readonly kind:
-    'event' | 'prompt' | 'memory' | 'skill' | 'compaction' | 'middleware' | 'dry-run-input';
+    | 'event'
+    | 'prompt'
+    | 'memory'
+    | 'skill'
+    | 'tool'
+    | 'compaction'
+    | 'middleware'
+    | 'dry-run-input';
   readonly id?: string;
   readonly sourceSeqs?: readonly number[];
   readonly promptId?: string;

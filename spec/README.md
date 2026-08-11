@@ -6,7 +6,7 @@
 
 ## Schema 版本与 `$id`
 
-- spec 发行版本使用 SemVer，首个版本为 `0.1.0`；本次向后兼容增补后的版本为 `0.3.0`。
+- spec 发行版本使用 SemVer，首个版本为 `0.1.0`；本次向后兼容增补后的版本为 `0.4.0`。
 - Schema 文件名使用 `<name>.v<major>.json`；`v0` 表示当前实验性契约代际，不等同于 spec 发行版本。
 - Schema 的规范 `$id` 为 `https://openagentcore.dev/spec/schemas/<filename>`，与仓库文件名一一对应。
 - 当前 Schema 使用 JSON Schema 2020-12；顶层协议对象默认封闭，未声明字段会被拒绝。
@@ -82,6 +82,20 @@ Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。摘�
 
 `trajectory.v0.json` 包含 `metadata` 与 `events`。`metadata.specVersion` 使用完整 SemVer，并记录 `tenantId`、`sessionId` 与非空的 `agentDefinitionSummary`。具体支持版本由消费者的 spec 版本锁判断。空事件流合法；非空事件流必须与元数据属于同一租户和会话。JSON Schema 无法表达该跨项相等约束，一致性测试实现必须另行校验。
 
+## ModelPort Recording v0
+
+`model-recording.v0.json` 定义 `ModelPort` 边界上的可移植录制格式。录制包含能力快照，以及按调用开始顺序排列的 `countTokens` 与 `stream` 操作。它只保存内核可见的 `ModelRequest`、归一化 `ModelChunk` 和稳定错误字段，不保存 HTTP 请求、响应头或原始 SSE 数据。
+
+每项操作包含从 0 开始连续递增的 `seq`。`countTokens` 以 `returned`、`error` 或 `cancelled` 结束；`stream` 保存零个或多个 `chunk` 帧，并以唯一的 `completed`、`error` 或 `cancelled` 帧结束。所有 `atMs` 均相对于对应操作开始时刻，必须为非负数且单调不减。JSON Schema 校验帧结构和唯一终态；操作序号连续、时序单调和终态位于末尾由回放实现校验。
+
+`error` 保存可重建的 `ModelPortError` 分类、重试标记和可选稳定字段。普通错误只保存名称与消息，不保存堆栈、`cause` 或 provider 原始响应。调用方取消和消费者提前关闭流均记录为 `cancelled`，不得转写为普通 provider 错误。回放遇到 `cancelled` 时，只有传入的 `AbortSignal` 已取消才能复现原取消原因；否则必须报告回放不匹配。
+
+录制器按大小写不敏感的敏感键集递归替换请求与错误详情中的值，并可增加相对于这两个对象根节点的 RFC 6901 JSON Pointer。替换值固定为 `[REDACTED]`，实际采用的键集与指针保存在 `redaction` 中。回放先应用同一脱敏规则，再严格比较请求；因此脱敏位置允许使用不同凭据，其他差异不得忽略。模型输出仍是程序语义的一部分，不做通用文本脱敏；不得把凭据放入 prompt、工具参数或模型输出。
+
+回放默认不等待录制延迟；需要验证流式节奏时可显式启用记录时序。严格回放按操作顺序消费，拒绝并发调用，并可在测试结束时断言所有操作已消费。确定性只覆盖 `ModelPort`：工具、时钟、随机数和其他 provider 仍需独立控制。
+
+录制位于归一化边界意味着它可以检验内核对分块、错误和取消的处理，但不能证明真实 provider 的 SSE 分片、工具参数拼接或错误映射正确。此类差距属于 adapter 一致性测试范围，不在录制或回放层补偿。
+
 ## 一致性测试向量
 
 `vectors/*.json` 均为手写样例，格式如下：
@@ -115,14 +129,17 @@ Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。摘�
 
 一致性测试运行器必须启用 JSON Schema 标准 format 的断言语义，确保 `date-time` 不是仅作注解。编译 `trajectory.v0.json` 前，必须先按 `$id` 注册 `agent-event.v0.json`，或提供等价的 Schema resolver。
 
-参考实现的测试自动发现并消费本目录下的全部 JSON 文件。
+参考实现的 AgentEvent 测试自动发现并消费 `vectors/` 下的全部 JSON 文件。
+
+`model-recording-vectors/*.json` 使用独立夹具，包含 `description`、`expected` 与 `recording`。`expected` 为 `accepted`、`schema-rejected` 或 `replay-rejected`；前两阶段分别运行 `model-recording.v0.json` 与录制回放不变量校验。该目录不由 AgentEvent 一致性测试运行器读取。
 
 ## 外部协议版本锁定
 
 采标不自造（design.md §2.3）。本目录记录各外部协议的锁定版本，升级走 ADR：
 
-| 协议  | 锁定版本                                       |
-| ----- | ---------------------------------------------- |
-| MCP   | 2026-07-28                                     |
-| A2A   | v1.0                                           |
-| AG-UI | 跟随主线，`oac.*` 扩展事件 Schema 在本目录定义 |
+| 协议                               | 锁定版本                                                                |
+| ---------------------------------- | ----------------------------------------------------------------------- |
+| MCP                                | 2026-07-28                                                              |
+| A2A                                | v1.0                                                                    |
+| AG-UI                              | 跟随主线，`oac.*` 扩展事件 Schema 在本目录定义                          |
+| OpenAI-compatible Chat Completions | M1-1 公共 SSE 子集（2026-08-11）；契约见 ADR 0007 与 Adapter 一致性测试 |

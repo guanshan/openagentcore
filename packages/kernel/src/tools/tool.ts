@@ -36,6 +36,16 @@ export class ToolRegistryError extends Error {
   }
 }
 
+export class ToolContractError extends Error {
+  readonly tool: string;
+
+  constructor(tool: string, detail: string) {
+    super(`Tool "${tool}" must return { outcome, result }, received ${detail}.`);
+    this.name = 'ToolContractError';
+    this.tool = tool;
+  }
+}
+
 export class ToolRegistry {
   readonly #tools = new Map<string, Tool>();
   readonly #groups = new Map<string, Set<string>>();

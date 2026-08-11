@@ -60,7 +60,7 @@ import {
   type SessionReplayState,
 } from './session-state.js';
 
-export { PROMPTED_TOOL_CALL_PREFIX } from './context.js';
+export { PROMPTED_TOOL_CALL_PREFIX, PROMPTED_TOOL_RESULT_PREFIX } from './context.js';
 export { UnknownToolResultError } from './recovery.js';
 export { AgentLoopCrashError, AgentLoopInvariantError } from './step.js';
 
@@ -697,11 +697,25 @@ function copyEventFields(
   return target;
 }
 
-function abortableDelay(delayMs: number, signal: AbortSignal): Promise<void> {
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+async function abortableDelay(delayMs: number, signal: AbortSignal): Promise<void> {
   signal.throwIfAborted();
-  if (delayMs === 0) {
-    return Promise.resolve();
+  if (!Number.isFinite(delayMs) || delayMs < 0) {
+    throw new AgentLoopInvariantError(
+      `Retry delay must be a finite non-negative number, received ${String(delayMs)}.`,
+    );
   }
+  let remaining = delayMs;
+  while (remaining > 0) {
+    signal.throwIfAborted();
+    const slice = Math.min(remaining, MAX_TIMER_DELAY_MS);
+    await waitForDelaySlice(slice, signal);
+    remaining -= slice;
+  }
+}
+
+function waitForDelaySlice(delayMs: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       signal.removeEventListener('abort', onAbort);

@@ -36,6 +36,7 @@ export type {
   CompactionAppliedEvent,
   ContextAssembly,
   ContextAssemblyMessage,
+  ContextAssemblyToolCall,
   ContextAssemblyTool,
   ContextSegment,
   ContextSegmentSource,
@@ -86,7 +87,12 @@ export type {
   PromptSourceSnapshot,
 } from './prompts/registry.js';
 
-export { ScriptedModelExhaustedError, ScriptedModelPort } from './ports/model.js';
+export {
+  MODEL_PORT_ERROR_KINDS,
+  ModelPortError,
+  ScriptedModelExhaustedError,
+  ScriptedModelPort,
+} from './ports/model.js';
 export type {
   FinishModelChunk,
   ModelCapabilities,
@@ -94,7 +100,10 @@ export type {
   ModelFinishReason,
   ModelMessage,
   ModelMessageRole,
+  ModelMessageToolCall,
   ModelPort,
+  ModelPortErrorKind,
+  ModelPortErrorOptions,
   ModelRequest,
   ModelToolDefinition,
   ModelToolUse,
@@ -111,6 +120,7 @@ export {
   FailingTool,
   ResultFailingTool,
   SlowTool,
+  ToolContractError,
   ToolRegistry,
   ToolRegistryError,
 } from './tools/tool.js';
@@ -219,6 +229,7 @@ export {
   AgentLoopCrashError,
   AgentLoopInvariantError,
   PROMPTED_TOOL_CALL_PREFIX,
+  PROMPTED_TOOL_RESULT_PREFIX,
   UnknownToolResultError,
 } from './loop/agent-loop.js';
 export { formatContextAssembly } from './loop/context.js';

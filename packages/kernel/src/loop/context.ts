@@ -18,6 +18,7 @@ import type {
 } from '../events/types.js';
 import type {
   ModelMessage,
+  ModelMessageToolCall,
   ModelPort,
   ModelRequest,
   ModelToolDefinition,
@@ -34,6 +35,7 @@ import type {
 } from './middleware.js';
 
 export const PROMPTED_TOOL_CALL_PREFIX = 'OAC_TOOL_CALL ';
+export const PROMPTED_TOOL_RESULT_PREFIX = 'OAC_TOOL_RESULT ';
 
 const SYSTEM_SLOT_IDS = [
   'identity',
@@ -78,10 +80,15 @@ export async function assembleContext(
 ): Promise<ContextAssemblyDraft> {
   const mode = options.mode ?? 'execute';
   const prompts = runtime.prompts;
+  const definitions = runtime.tools.list().map(toolDefinition);
+  const toolUse = definitions.length === 0 ? 'none' : runtime.model.capabilities.toolUse;
+  const capabilityDowngrades =
+    definitions.length > 0 && toolUse !== 'native' ? [`tool-use:native->${toolUse}`] : [];
   const projection = await projectMessageHistory(runtime.eventLog.read(0));
   const history = materializeMessageHistory(projection);
-  let messages = historyToModelMessages(history);
-  let segments = history.map((item, index) => historySegment(item, index));
+  const historyAssembly = assembleHistory(history, toolUse);
+  let messages = historyAssembly.messages;
+  let segments = historyAssembly.segments;
   if (options.input !== undefined) {
     const messageIndex = messages.length;
     messages = [...messages, { role: 'user', content: options.input.content }];
@@ -135,13 +142,10 @@ export async function assembleContext(
     ),
   );
 
-  const definitions = runtime.tools.list().map(toolDefinition);
-  const toolUse = definitions.length === 0 ? 'none' : runtime.model.capabilities.toolUse;
-  const capabilityDowngrades =
-    definitions.length > 0 && toolUse !== 'native' ? [`tool-use:native->${toolUse}`] : [];
   const slotAssembly = assembleSystemSlots(
     prompts,
     toolUse,
+    definitions,
     projection.entries.some((entry) => entry.kind === 'tool-result' && entry.outcome === 'failed'),
   );
   if (slotAssembly.message !== undefined) {
@@ -268,6 +272,9 @@ export async function measureContextAssembly(
     if (finalMessage === undefined) {
       throw new Error(`Context segment ${segment.id} refers to a missing message.`);
     }
+    const firstSegmentForMessage = assembly.segments.find(
+      (candidate) => candidate.messageIndex === segment.messageIndex,
+    );
     const tokenCount = await model.countTokens(
       {
         messages: [
@@ -278,6 +285,9 @@ export async function measureContextAssembly(
             ...(finalMessage.toolCallId === undefined
               ? {}
               : { toolCallId: finalMessage.toolCallId }),
+            ...(finalMessage.toolCalls === undefined || firstSegmentForMessage?.id !== segment.id
+              ? {}
+              : { toolCalls: structuredClone(finalMessage.toolCalls) }),
           },
         ],
         tools: [],
@@ -424,8 +434,11 @@ export function messagesToJson(messages: readonly ModelMessage[]): JsonValue {
   return messages.map((message) => messageToAssembly(message));
 }
 
-export function historyToModelMessages(history: readonly MessageHistoryItem[]): ModelMessage[] {
-  return history.map(historyToModelMessage);
+export function historyToModelMessages(
+  history: readonly MessageHistoryItem[],
+  toolUse: ModelToolUse,
+): ModelMessage[] {
+  return assembleHistory(history, toolUse).messages;
 }
 
 export function compactionEntries(
@@ -451,11 +464,59 @@ export function compactionEntries(
     .map(([sourceSeq, contents]) => ({ sourceSeq, content: contents.join('\n') }));
 }
 
-function historyToModelMessage(item: MessageHistoryItem): ModelMessage {
+function assembleHistory(
+  history: readonly MessageHistoryItem[],
+  toolUse: ModelToolUse,
+): { readonly messages: ModelMessage[]; readonly segments: ContextSegment[] } {
+  const messages: ModelMessage[] = [];
+  const segments: ContextSegment[] = [];
+  const messageStepIds: Array<string | undefined> = [];
+
+  for (const item of history) {
+    const message = historyToModelMessage(item, toolUse);
+    let messageIndex = messages.length;
+    const previous = messages.at(-1);
+    const previousStepId = messageStepIds.at(-1);
+    if (
+      toolUse === 'native' &&
+      item.kind === 'tool-call' &&
+      previous?.role === 'assistant' &&
+      item.stepId !== undefined &&
+      previousStepId === item.stepId
+    ) {
+      messageIndex -= 1;
+      messages[messageIndex] = {
+        ...previous,
+        toolCalls: [...(previous.toolCalls ?? []), ...(message.toolCalls ?? [])],
+      };
+    } else {
+      messages.push(message);
+      messageStepIds.push(
+        item.kind === 'message' && item.role === 'assistant'
+          ? item.stepId
+          : item.kind === 'tool-call'
+            ? item.stepId
+            : undefined,
+      );
+    }
+    segments.push(historySegment(item, messageIndex, toolUse));
+  }
+
+  return { messages, segments };
+}
+
+function historyToModelMessage(item: MessageHistoryItem, toolUse: ModelToolUse): ModelMessage {
   switch (item.kind) {
     case 'message':
       return { role: item.role, content: item.content };
     case 'tool-call':
+      if (toolUse === 'native') {
+        return {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ callId: item.callId, tool: item.tool, args: structuredClone(item.args) }],
+        };
+      }
       return {
         role: 'assistant',
         content: `${PROMPTED_TOOL_CALL_PREFIX}${JSON.stringify({
@@ -465,6 +526,15 @@ function historyToModelMessage(item: MessageHistoryItem): ModelMessage {
         })}`,
       };
     case 'tool-result':
+      if (toolUse !== 'native') {
+        return {
+          role: 'user',
+          content: `${PROMPTED_TOOL_RESULT_PREFIX}${JSON.stringify({
+            callId: item.callId,
+            result: item.result,
+          })}`,
+        };
+      }
       return {
         role: 'tool',
         content: JSON.stringify(item.result),
@@ -475,8 +545,12 @@ function historyToModelMessage(item: MessageHistoryItem): ModelMessage {
   }
 }
 
-function historySegment(item: MessageHistoryItem, messageIndex: number): ContextSegment {
-  const message = historyToModelMessage(item);
+function historySegment(
+  item: MessageHistoryItem,
+  messageIndex: number,
+  toolUse: ModelToolUse,
+): ContextSegment {
+  const message = historyToModelMessage(item, toolUse);
   const source: ContextSegmentSource =
     item.kind === 'summary'
       ? {
@@ -500,23 +574,59 @@ function historySegment(item: MessageHistoryItem, messageIndex: number): Context
 function assembleSystemSlots(
   prompts: PromptRegistrySnapshot,
   toolUse: ModelToolUse,
+  definitions: readonly ModelToolDefinition[],
   hasFailedToolResult: boolean,
 ): { readonly message?: ModelMessage; readonly segments: readonly ContextSegment[] } {
   const promptGroups = SYSTEM_SLOT_IDS.map((slot) => ({
     slot,
     prompts: promptsForSlot(prompts, slot, toolUse, hasFailedToolResult),
   }));
-  const content = promptGroups
+  const promptContents = promptGroups
     .flatMap(({ prompts: slotPrompts }) => slotPrompts.map((prompt) => prompt.content))
+    .filter((value) => value.length > 0);
+  const promptedDefinitions =
+    toolUse === 'prompted' ? formatPromptedToolDefinitions(definitions) : undefined;
+  const content = [
+    ...promptContents,
+    ...(promptedDefinitions === undefined ? [] : [promptedDefinitions]),
+  ]
     .filter((value) => value.length > 0)
     .join('\n\n');
   if (content.length === 0) {
     return { segments: [] };
   }
-  const segments = promptGroups.flatMap(({ slot, prompts: slotPrompts }) =>
-    slotPrompts.flatMap((prompt) => promptSegments(slot, prompt)),
-  );
+  const segments = [
+    ...promptGroups.flatMap(({ slot, prompts: slotPrompts }) =>
+      slotPrompts.flatMap((prompt) => promptSegments(slot, prompt)),
+    ),
+    ...(promptedDefinitions === undefined
+      ? []
+      : [
+          {
+            id: 'slot:tool-protocol:definitions',
+            stage: 'slots' as const,
+            role: 'system' as const,
+            content: promptedDefinitions,
+            source: { kind: 'tool' as const, id: 'definitions' },
+            tokenCount: null,
+            messageIndex: 0,
+          },
+        ]),
+  ];
   return { message: { role: 'system', content }, segments };
+}
+
+function formatPromptedToolDefinitions(definitions: readonly ModelToolDefinition[]): string {
+  return [
+    'Available tools (one JSON object per line):',
+    ...definitions.map((definition) =>
+      JSON.stringify({
+        name: definition.name,
+        ...(definition.description === undefined ? {} : { description: definition.description }),
+        inputSchema: definition.inputSchema,
+      }),
+    ),
+  ].join('\n');
 }
 
 function promptsForSlot(
@@ -670,9 +780,12 @@ function jsonToModelMessages(value: JsonValue | undefined): ModelMessage[] | und
     }
     const name = item['name'];
     const toolCallId = item['toolCallId'];
+    const toolCalls = jsonToModelToolCalls(item['toolCalls']);
     if (
       (name !== undefined && typeof name !== 'string') ||
-      (toolCallId !== undefined && typeof toolCallId !== 'string')
+      (toolCallId !== undefined && typeof toolCallId !== 'string') ||
+      (item['toolCalls'] !== undefined && toolCalls === undefined) ||
+      (toolCalls !== undefined && role !== 'assistant')
     ) {
       return undefined;
     }
@@ -681,9 +794,39 @@ function jsonToModelMessages(value: JsonValue | undefined): ModelMessage[] | und
       content,
       ...(name === undefined ? {} : { name }),
       ...(toolCallId === undefined ? {} : { toolCallId }),
+      ...(toolCalls === undefined ? {} : { toolCalls }),
     });
   }
   return messages;
+}
+
+function jsonToModelToolCalls(value: JsonValue | undefined): ModelMessageToolCall[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  const calls: ModelMessageToolCall[] = [];
+  for (const item of value) {
+    if (!isJsonObject(item)) {
+      return undefined;
+    }
+    const callId = item['callId'];
+    const tool = item['tool'];
+    const args = item['args'];
+    if (
+      typeof callId !== 'string' ||
+      callId.length === 0 ||
+      typeof tool !== 'string' ||
+      tool.length === 0 ||
+      !isJsonValue(args)
+    ) {
+      return undefined;
+    }
+    calls.push({ callId, tool, args: structuredClone(args) });
+  }
+  return calls;
 }
 
 function jsonToModelTools(value: JsonValue | undefined): ModelToolDefinition[] | undefined {
@@ -721,6 +864,15 @@ function messageToAssembly(message: ModelMessage): ContextAssemblyMessage {
     content: message.content,
     ...(message.name === undefined ? {} : { name: message.name }),
     ...(message.toolCallId === undefined ? {} : { toolCallId: message.toolCallId }),
+    ...(message.toolCalls === undefined
+      ? {}
+      : {
+          toolCalls: message.toolCalls.map((call) => ({
+            callId: call.callId,
+            tool: call.tool,
+            args: structuredClone(call.args),
+          })),
+        }),
   };
 }
 
@@ -734,6 +886,28 @@ function toolToAssembly(tool: ModelToolDefinition) {
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isJsonValue(value: unknown, ancestors = new Set<object>()): value is JsonValue {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+    return true;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+  if (typeof value !== 'object' || ancestors.has(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) {
+    return false;
+  }
+  ancestors.add(value);
+  const valid = Array.isArray(value)
+    ? value.every((item) => isJsonValue(item, ancestors))
+    : Object.values(value).every((item) => item !== undefined && isJsonValue(item, ancestors));
+  ancestors.delete(value);
+  return valid;
 }
 
 function toolDefinition(tool: Tool): ModelToolDefinition {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ModelPortError } from '../ports/model.js';
 import {
   AllowAllPermissionStrategy,
   createDefaultStrategyRegistry,
@@ -176,6 +177,36 @@ describe('built-in strategies', () => {
     await expect(
       strategy.apply({ attempt: 1, operation: 'recovery', error: null }, context),
     ).resolves.toEqual({ action: 'feed-back' });
+  });
+
+  it('honors provider retryability and Retry-After for model failures', async () => {
+    const strategy = new ExponentialBackoffRetryStrategy();
+    await strategy.init({ maxAttempts: 3, initialDelayMs: 100, maxDelayMs: 500 }, {});
+
+    await expect(
+      strategy.apply(
+        {
+          attempt: 1,
+          operation: 'model',
+          error: new ModelPortError('rate-limit', 'slow down', {
+            retryable: true,
+            retryAfterMs: 2_000,
+          }),
+        },
+        context,
+      ),
+    ).resolves.toEqual({ action: 'retry', delayMs: 2_000 });
+    await expect(
+      strategy.apply(
+        {
+          attempt: 1,
+          operation: 'model',
+          error: new ModelPortError('content-filter', 'blocked', { retryable: false }),
+        },
+        context,
+      ),
+    ).resolves.toEqual({ action: 'fail-turn' });
+    expect(strategy.metrics()).toEqual({ evaluations: 2, retries: 1, exhausted: 1 });
   });
 
   it('keeps checkpoint none replaceable and checks cancellation in every apply', async () => {
