@@ -9,6 +9,7 @@ import {
   executePersistedToolCall,
   recordedToolCall,
   requestPermission,
+  resumeInterruptedModelStep,
   type StepRuntime,
 } from './step.js';
 
@@ -32,6 +33,18 @@ export async function recoverActiveStep(
   const activeStep = state.activeStep;
   const activeTurn = state.activeTurn;
   if (activeTurn === undefined || activeStep === undefined) {
+    return;
+  }
+
+  const initialStepEvents = await runtime.eventsForStep(activeStep.stepId);
+  if (!initialStepEvents.some((event) => event.type === 'tool.call')) {
+    await resumeInterruptedModelStep(
+      runtime,
+      activeTurn.turnId,
+      activeStep.stepId,
+      initialStepEvents,
+      signal,
+    );
     return;
   }
 

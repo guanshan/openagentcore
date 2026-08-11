@@ -135,6 +135,27 @@ export function modelRequestToJson(request: ModelRequest): JsonObject {
   };
 }
 
+export function modelRequestFromJson(value: JsonObject): ModelRequest | undefined {
+  const messages = jsonToModelMessages(value['messages']);
+  const tools = jsonToModelTools(value['tools']);
+  const toolUse = value['toolUse'];
+  const metadata = value['metadata'];
+  if (
+    messages === undefined ||
+    tools === undefined ||
+    (toolUse !== 'native' && toolUse !== 'prompted' && toolUse !== 'none') ||
+    (metadata !== undefined && !isJsonObject(metadata))
+  ) {
+    return undefined;
+  }
+  return {
+    messages,
+    tools,
+    toolUse,
+    ...(metadata === undefined ? {} : { metadata: structuredClone(metadata) }),
+  };
+}
+
 export function messagesToJson(messages: readonly ModelMessage[]): JsonValue {
   return messages.map((message) => ({
     role: message.role,
@@ -226,6 +247,39 @@ function jsonToModelMessages(value: JsonValue | undefined): ModelMessage[] | und
     });
   }
   return messages;
+}
+
+function jsonToModelTools(value: JsonValue | undefined): ModelToolDefinition[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const tools: ModelToolDefinition[] = [];
+  for (const item of value) {
+    if (!isJsonObject(item)) {
+      return undefined;
+    }
+    const name = item['name'];
+    const description = item['description'];
+    const inputSchema = item['inputSchema'];
+    if (
+      typeof name !== 'string' ||
+      name.length === 0 ||
+      (description !== undefined && typeof description !== 'string') ||
+      !isJsonObject(inputSchema)
+    ) {
+      return undefined;
+    }
+    tools.push({
+      name,
+      ...(description === undefined ? {} : { description }),
+      inputSchema: structuredClone(inputSchema),
+    });
+  }
+  return tools;
+}
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function toolDefinition(tool: Tool): ModelToolDefinition {

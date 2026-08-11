@@ -21,7 +21,12 @@ import {
   ToolRegistry,
   type Tool,
 } from '../tools/tool.js';
-import { AgentLoop, AgentLoopCrashError, PROMPTED_TOOL_CALL_PREFIX } from './agent-loop.js';
+import {
+  AgentLoop,
+  AgentLoopCrashError,
+  AgentLoopInvariantError,
+  PROMPTED_TOOL_CALL_PREFIX,
+} from './agent-loop.js';
 import { projectSessionState } from './session-state.js';
 
 const timestamp = '2026-08-11T00:00:00Z';
@@ -235,6 +240,43 @@ describe('AgentLoop', () => {
         outcome: 'succeeded',
       }),
     );
+  });
+
+  it('restarts prompted tool-call buffering after an interrupted model attempt', async () => {
+    const prompted = `${PROMPTED_TOOL_CALL_PREFIX}${JSON.stringify({
+      callId: 'call-prompted-retry',
+      tool: 'echo',
+      args: { text: 'retried' },
+    })}`;
+    const tool = new EchoTool();
+    const model = new ScriptedModelPort(
+      [
+        {
+          chunks: [{ kind: 'text', text: prompted.slice(0, 5) }],
+          error: new Error('prompted stream interrupted'),
+        },
+        [
+          { kind: 'text', text: prompted },
+          { kind: 'finish', reason: 'tool-calls' },
+        ],
+        [
+          { kind: 'text', text: 'Prompted retry complete.' },
+          { kind: 'finish', reason: 'stop' },
+        ],
+      ],
+      { capabilities: { toolUse: 'prompted' } },
+    );
+    const { loop } = createLoop(model, {
+      tools: new ToolRegistry().register(tool),
+    });
+
+    const result = await loop.runTurn({ content: 'Retry the prompted call.' });
+
+    expect(result.stopReason).toBe('completed');
+    expect(tool.requests.map((request) => request.callId)).toEqual(['call-prompted-retry']);
+    expect(
+      result.events.filter((event) => event.type === 'tool.call').map((event) => event.callId),
+    ).toEqual(['call-prompted-retry']);
   });
 
   it('persists steering injected during step 2 and includes it in step 3 context', async () => {
@@ -494,7 +536,14 @@ describe('AgentLoop', () => {
         error: interruption,
       },
     ]);
-    const { loop, log } = createLoop(model);
+    const { loop, log } = createLoop(model, {
+      strategies: {
+        retry: {
+          use: 'exponential-backoff',
+          config: { maxAttempts: 1, initialDelayMs: 0, exhaustedAction: 'fail-turn' },
+        },
+      },
+    });
 
     await expect(loop.runTurn({ content: 'Interrupt.' })).rejects.toBe(interruption);
 
@@ -508,34 +557,247 @@ describe('AgentLoop', () => {
     await expectClosedAndSchemaValid(log, 'failed');
   });
 
-  it('conservatively fails an unfinished model-only step during crash recovery', async () => {
+  it('retries an interrupted model stream without duplicating a rechunked text prefix', async () => {
+    const interruption = new Error('transient model stream failure');
+    const model = new ScriptedModelPort([
+      {
+        chunks: [
+          { kind: 'text', text: 'Par' },
+          { kind: 'text', text: 'tial ' },
+        ],
+        error: interruption,
+      },
+      [
+        { kind: 'text', text: 'Partial' },
+        { kind: 'text', text: ' answer.' },
+        { kind: 'usage', usage: usage(5, 2) },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
+    const { loop, log } = createLoop(model);
+
+    const result = await loop.runTurn({ content: 'Retry the model.' });
+
+    expect(result.stopReason).toBe('completed');
+    expect(model.requests).toHaveLength(2);
+    expect(model.requests[1]).toEqual(model.requests[0]);
+    expect(result.history).toContainEqual({
+      kind: 'message',
+      role: 'assistant',
+      stepId: 'turn-0:step:1',
+      content: 'Partial answer.',
+      sourceSeqs: [3, 4, 5],
+    });
+    const events = await readEvents(log);
+    const requestEvent = events.find(
+      (event): event is Extract<AgentEvent, { readonly type: 'model.request' }> =>
+        event.type === 'model.request',
+    );
+    expect(events.filter((event) => event.type === 'model.request')).toHaveLength(1);
+    expect(requestEvent).toBeDefined();
+    expect(
+      events
+        .filter((event) => event.type === 'model.delta')
+        .every((event) => event.requestId === requestEvent?.requestId),
+    ).toBe(true);
+    expect(
+      events.flatMap((event) =>
+        event.type === 'model.delta' && event.delta.kind === 'text' ? [event.delta.text] : [],
+      ),
+    ).toEqual(['Par', 'tial ', 'answer.']);
+    await expectClosedAndSchemaValid(log, 'done');
+  });
+
+  it('retries token counting before opening a model stream', async () => {
+    const countFailure = new Error('transient token counter failure');
+    const model = new ScriptedModelPort(
+      [
+        [
+          { kind: 'text', text: 'Counted after retry.' },
+          { kind: 'finish', reason: 'stop' },
+        ],
+      ],
+      { tokenCounts: [countFailure, 7] },
+    );
+    const { loop, log } = createLoop(model);
+
+    const result = await loop.runTurn({ content: 'Retry token counting.' });
+
+    expect(result.stopReason).toBe('completed');
+    expect(model.tokenCountRequests).toHaveLength(2);
+    expect(model.requests).toHaveLength(1);
+    expect((await readEvents(log)).filter((event) => event.type === 'model.request')).toHaveLength(
+      1,
+    );
+  });
+
+  it('does not retry an error raised by model middleware after the Port completes', async () => {
+    const middlewareFailure = new Error('model middleware failed after next');
+    const model = new ScriptedModelPort([
+      [
+        { kind: 'text', text: 'Persisted once.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+      [{ kind: 'finish', reason: 'stop' }],
+    ]);
+    const { loop } = createLoop(model);
+    loop.use('model', async (_context, next) => {
+      await next();
+      throw middlewareFailure;
+    });
+
+    await expect(loop.runTurn({ content: 'Do not retry middleware.' })).rejects.toBe(
+      middlewareFailure,
+    );
+
+    expect(model.requests).toHaveLength(1);
+    expect(loop.strategyMetrics()).toContainEqual({
+      kind: 'retry',
+      name: 'exponential-backoff',
+      metrics: { evaluations: 0, retries: 0, exhausted: 0 },
+    });
+  });
+
+  it('does not retry an event middleware error after a model delta is persisted', async () => {
+    const middlewareFailure = new Error('event middleware failed after model.delta');
+    const model = new ScriptedModelPort([
+      [
+        { kind: 'text', text: 'Persisted once.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+      [{ kind: 'finish', reason: 'stop' }],
+    ]);
+    const { loop, log } = createLoop(model);
+    loop.use('event', async (context, next) => {
+      await next();
+      if (context.event.type === 'model.delta') {
+        throw middlewareFailure;
+      }
+    });
+
+    await expect(loop.runTurn({ content: 'Do not retry event middleware.' })).rejects.toBe(
+      middlewareFailure,
+    );
+
+    expect(model.requests).toHaveLength(1);
+    expect((await readEvents(log)).filter((event) => event.type === 'model.delta')).toHaveLength(1);
+    expect(loop.strategyMetrics()).toContainEqual({
+      kind: 'retry',
+      name: 'exponential-backoff',
+      metrics: { evaluations: 0, retries: 0, exhausted: 0 },
+    });
+  });
+
+  it('deduplicates tool calls when a model stream retry extends the durable prefix', async () => {
+    const interruption = new Error('retry tool response');
+    const tool = new EchoTool();
+    const first = toolCall('call-model-a', 'echo', { value: 1 });
+    const second = toolCall('call-model-b', 'echo', { value: 2 });
+    const model = new ScriptedModelPort([
+      { chunks: [first], error: interruption },
+      [first, second, { kind: 'finish', reason: 'tool-calls' }],
+      [
+        { kind: 'text', text: 'Both calls completed.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
+    const { loop } = createLoop(model, {
+      tools: new ToolRegistry().register(tool),
+    });
+
+    const result = await loop.runTurn({ content: 'Use both calls.' });
+
+    expect(result.stopReason).toBe('completed');
+    expect(tool.requests.map((request) => request.callId)).toEqual([
+      'call-model-a',
+      'call-model-b',
+    ]);
+    expect(
+      result.events.filter((event) => event.type === 'tool.call').map((event) => event.callId),
+    ).toEqual(['call-model-a', 'call-model-b']);
+    expect(
+      result.events.filter((event) => event.type === 'model.delta' && event.delta.kind === 'tool'),
+    ).toHaveLength(2);
+  });
+
+  it('fails closed when a retried model stream changes a durable tool call', async () => {
+    const interruption = new Error('retry changed tool call');
+    const tool = new EchoTool();
+    const model = new ScriptedModelPort([
+      {
+        chunks: [toolCall('call-model-diverged', 'echo', { value: 1 })],
+        error: interruption,
+      },
+      [
+        toolCall('call-model-diverged', 'echo', { value: 2 }),
+        { kind: 'finish', reason: 'tool-calls' },
+      ],
+    ]);
+    const { loop } = createLoop(model, {
+      tools: new ToolRegistry().register(tool),
+    });
+
+    await expect(loop.runTurn({ content: 'Keep the call stable.' })).rejects.toBeInstanceOf(
+      AgentLoopInvariantError,
+    );
+
+    expect(model.requests).toHaveLength(2);
+    expect(tool.requests).toHaveLength(0);
+    expect(loop.strategyMetrics()).toContainEqual({
+      kind: 'retry',
+      name: 'exponential-backoff',
+      metrics: { evaluations: 1, retries: 1, exhausted: 0 },
+    });
+  });
+
+  it('resumes an interrupted model-only step from its persisted request and delta prefix', async () => {
     const crash = new AgentLoopCrashError('model process lost');
     const log = new InMemoryEventLog(identity('model-crash'));
+    const firstModel = new ScriptedModelPort([
+      { chunks: [{ kind: 'text', text: 'Partial.' }], error: crash },
+    ]);
     const crashing = new AgentLoop({
       eventLog: log,
-      model: new ScriptedModelPort([
-        { chunks: [{ kind: 'text', text: 'Partial.' }], error: crash },
-      ]),
+      model: firstModel,
       now: () => timestamp,
     });
 
     await expect(crashing.runTurn({ content: 'Crash the model.' })).rejects.toBe(crash);
 
+    const resumedModel = new ScriptedModelPort([
+      [
+        { kind: 'text', text: 'Par' },
+        { kind: 'text', text: 'tial. Recovered.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
     const resumed = new AgentLoop({
       eventLog: log,
-      model: new ScriptedModelPort([]),
+      model: resumedModel,
       now: () => timestamp,
     });
     const result = await resumed.resumeTurn();
 
-    expect(result.stopReason).toBe('failed');
-    expect(result.events).toContainEqual(
+    expect(result.stopReason).toBe('completed');
+    expect(result.history).toContainEqual(
       expect.objectContaining({
-        type: 'step.finished',
-        outcome: 'failed',
+        kind: 'message',
+        role: 'assistant',
+        content: 'Partial. Recovered.',
       }),
     );
-    await expectClosedAndSchemaValid(log, 'failed');
+    expect(resumedModel.requests[0]).toEqual(firstModel.requests[0]);
+    expect(resumedModel.requests[0]?.messages).not.toContainEqual(
+      expect.objectContaining({ role: 'assistant', content: 'Partial.' }),
+    );
+    expect(result.events.filter((event) => event.type === 'model.request')).toHaveLength(1);
+    const requestEvent = result.events.find((event) => event.type === 'model.request');
+    expect(
+      result.events
+        .filter((event) => event.type === 'model.delta')
+        .every((event) => event.requestId === requestEvent?.requestId),
+    ).toBe(true);
+    await expectClosedAndSchemaValid(log, 'done');
   });
 
   it('records a denied tool result and leaves no pending work', async () => {

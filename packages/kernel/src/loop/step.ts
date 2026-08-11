@@ -12,6 +12,7 @@ import {
   assembleContext,
   type ContextRuntime,
   middlewareContext,
+  modelRequestFromJson,
   modelRequestToJson,
   PROMPTED_TOOL_CALL_PREFIX,
   runMemoryPipeline,
@@ -62,6 +63,8 @@ interface ModelStepResult {
   readonly usage: ModelUsage;
 }
 
+type ModelPortAttempt = { readonly ok: true } | { readonly ok: false; readonly error: unknown };
+
 export const EMPTY_MODEL_USAGE: ModelUsage = Object.freeze({
   inputTokens: 0,
   outputTokens: 0,
@@ -84,7 +87,27 @@ export async function runStep(
     runtime.consumeSteering(stepId, injectedInputs.length);
   }
 
-  const modelResult = await callModel(runtime, turnId, stepId, signal);
+  await runStepBody(runtime, turnId, stepId, [], signal);
+}
+
+export async function resumeInterruptedModelStep(
+  runtime: StepRuntime,
+  turnId: string,
+  stepId: string,
+  events: readonly AgentEvent[],
+  signal: AbortSignal,
+): Promise<void> {
+  await runStepBody(runtime, turnId, stepId, events, signal);
+}
+
+async function runStepBody(
+  runtime: StepRuntime,
+  turnId: string,
+  stepId: string,
+  persistedEvents: readonly AgentEvent[],
+  signal: AbortSignal,
+): Promise<void> {
+  const modelResult = await callModel(runtime, turnId, stepId, persistedEvents, signal);
   runtime.setActiveUsage(modelResult.usage);
   let failed = false;
 
@@ -302,44 +325,62 @@ async function callModel(
   runtime: StepRuntime,
   turnId: string,
   stepId: string,
+  persistedEvents: readonly AgentEvent[],
   signal: AbortSignal,
 ): Promise<ModelStepResult> {
-  const { messages, definitions, toolUse, capabilityDowngrades } = await assembleContext(
-    runtime,
-    turnId,
-    stepId,
-    signal,
+  const persistedRequest = persistedEvents.find(
+    (event): event is Extract<AgentEvent, { readonly type: 'model.request' }> =>
+      event.type === 'model.request',
   );
-  const requestId = `${stepId}:request`;
-  const metadata: JsonObject =
-    toolUse === 'prompted'
-      ? { turnId, stepId, toolProtocol: 'oac-prompted-tool-call-v0' }
-      : { turnId, stepId };
-  const request: ModelRequest = {
-    messages,
-    tools: toolUse === 'none' ? [] : definitions,
-    toolUse,
-    metadata,
-  };
+  let request: ModelRequest;
+  let capabilityDowngrades: readonly string[];
+  if (persistedRequest === undefined) {
+    const assembled = await assembleContext(runtime, turnId, stepId, signal);
+    const metadata: JsonObject =
+      assembled.toolUse === 'prompted'
+        ? { turnId, stepId, toolProtocol: 'oac-prompted-tool-call-v0' }
+        : { turnId, stepId };
+    request = {
+      messages: assembled.messages,
+      tools: assembled.toolUse === 'none' ? [] : assembled.definitions,
+      toolUse: assembled.toolUse,
+      metadata,
+    };
+    capabilityDowngrades = assembled.capabilityDowngrades;
+  } else {
+    const restored = modelRequestFromJson(persistedRequest.assembled);
+    if (restored === undefined) {
+      throw new AgentLoopInvariantError(
+        `Persisted model request for ${stepId} cannot be restored.`,
+      );
+    }
+    request = restored;
+    capabilityDowngrades = persistedRequest.capabilityDowngrades ?? [];
+  }
+
+  const requestId = persistedRequest?.requestId ?? `${stepId}:request`;
   const context: ModelMiddlewareContext = {
     ...middlewareContext(runtime.eventLog, signal, turnId, stepId),
     request,
     chunks: [] as ModelChunk[],
   };
-  const calls: ToolCallModelChunk[] = [];
+  const journal = new ModelDeltaJournal(
+    runtime,
+    stepId,
+    requestId,
+    persistedEvents.filter(
+      (event): event is Extract<AgentEvent, { readonly type: 'model.delta' }> =>
+        event.type === 'model.delta' &&
+        (event.requestId === undefined || event.requestId === requestId),
+    ),
+  );
   let usage: ModelUsage | undefined;
   let recordedChunks = 0;
-  let requestRecorded = false;
+  let requestRecorded = persistedRequest !== undefined;
   let countedInputTokens = 0;
   let promptedTextBuffer: string | undefined;
 
-  const acceptRecordedChunk = (recorded: {
-    readonly call?: ToolCallModelChunk;
-    readonly usage?: ModelUsage;
-  }): void => {
-    if (recorded.call !== undefined) {
-      calls.push(recorded.call);
-    }
+  const acceptRecordedChunk = (recorded: { readonly usage?: ModelUsage }): void => {
     usage = recorded.usage ?? usage;
     if (recorded.usage !== undefined) {
       runtime.setActiveUsage(recorded.usage);
@@ -355,6 +396,7 @@ async function callModel(
     acceptRecordedChunk(
       await recordModelChunk(
         runtime,
+        journal,
         { kind: 'text', text },
         text.startsWith(PROMPTED_TOOL_CALL_PREFIX) ? 'prompted' : 'none',
         stepId,
@@ -386,7 +428,15 @@ async function callModel(
       await flushPromptedText();
     }
     acceptRecordedChunk(
-      await recordModelChunk(runtime, chunk, context.request.toolUse, stepId, requestId, signal),
+      await recordModelChunk(
+        runtime,
+        journal,
+        chunk,
+        context.request.toolUse,
+        stepId,
+        requestId,
+        signal,
+      ),
     );
   };
 
@@ -408,18 +458,65 @@ async function callModel(
     requestRecorded = true;
   };
 
-  await runtime.middleware.run('model', context, async () => {
-    await recordRequest();
-    countedInputTokens = await runtime.model.countTokens(context.request, signal);
+  const invokeModelPort = async (): Promise<ModelPortAttempt> => {
+    promptedTextBuffer = undefined;
+    usage = undefined;
+    countedInputTokens = 0;
+    runtime.setActiveUsage(EMPTY_MODEL_USAGE);
+    try {
+      countedInputTokens = await runtime.model.countTokens(context.request, signal);
+    } catch (error) {
+      return { ok: false, error };
+    }
     runtime.setActiveUsage({
       inputTokens: countedInputTokens,
       outputTokens: 0,
       totalTokens: countedInputTokens,
     });
-    for await (const chunk of runtime.model.stream(context.request, signal)) {
+    const iterator = runtime.model.stream(context.request, signal)[Symbol.asyncIterator]();
+    while (true) {
+      let next: IteratorResult<ModelChunk>;
+      try {
+        next = await iterator.next();
+      } catch (error) {
+        return { ok: false, error };
+      }
+      if (next.done) {
+        await flushPromptedText();
+        journal.assertComplete();
+        return { ok: true };
+      }
+      const chunk = next.value;
       context.chunks.push(structuredClone(chunk));
       await recordChunk(chunk);
       recordedChunks += 1;
+    }
+  };
+
+  await runtime.middleware.run('model', context, async () => {
+    if (persistedRequest !== undefined) {
+      context.request = structuredClone(request);
+    }
+    await recordRequest();
+    let attempt = 1;
+    while (true) {
+      const outcome = await invokeModelPort();
+      if (outcome.ok) {
+        break;
+      }
+      if (outcome.error instanceof AgentLoopCrashError || signal.aborted) {
+        throw outcome.error;
+      }
+      const retry = await runtime.retry.apply(
+        { attempt, operation: 'model', error: outcome.error },
+        strategyContext(runtime, signal, turnId, stepId),
+      );
+      if (retry.action !== 'retry') {
+        throw outcome.error;
+      }
+      await runtime.sleep(retry.delayMs, signal);
+      attempt += 1;
+      journal.rewind();
     }
   });
 
@@ -429,9 +526,10 @@ async function callModel(
     await recordChunk(chunk);
   }
   await flushPromptedText();
+  journal.assertComplete();
 
   return {
-    calls,
+    calls: journal.toolCalls(),
     usage: usage ?? {
       inputTokens: countedInputTokens,
       outputTokens: 0,
@@ -442,57 +540,150 @@ async function callModel(
 
 async function recordModelChunk(
   runtime: StepRuntime,
+  journal: ModelDeltaJournal,
   chunk: ModelChunk,
   toolUse: ModelToolUse,
   stepId: string,
   requestId: string,
   signal: AbortSignal,
-): Promise<{ readonly call?: ToolCallModelChunk; readonly usage?: ModelUsage }> {
+): Promise<{ readonly usage?: ModelUsage }> {
   switch (chunk.kind) {
     case 'text': {
       const promptedCall = toolUse === 'prompted' ? decodePromptedToolCall(chunk.text) : undefined;
       if (promptedCall !== undefined) {
-        await runtime.emit(
-          {
-            type: 'model.delta',
-            stepId,
-            requestId,
-            delta: { kind: 'tool', toolCallDelta: toolCallToJson(promptedCall) },
-          },
-          signal,
-        );
-        return { call: promptedCall };
+        await journal.acceptTool(promptedCall, signal);
+        return {};
       }
-      await runtime.emit(
-        {
-          type: 'model.delta',
-          stepId,
-          requestId,
-          delta: { kind: 'text', text: chunk.text },
-        },
-        signal,
-      );
+      await journal.acceptText(chunk.text, signal);
       return {};
     }
     case 'tool-call':
       if (toolUse === 'none') {
         throw new AgentLoopInvariantError('Model emitted a tool call when toolUse is none.');
       }
-      await runtime.emit(
-        {
-          type: 'model.delta',
-          stepId,
-          requestId,
-          delta: { kind: 'tool', toolCallDelta: toolCallToJson(chunk) },
-        },
-        signal,
-      );
-      return { call: structuredClone(chunk) };
+      await journal.acceptTool(chunk, signal);
+      return {};
     case 'usage':
       // Providers may send several snapshots; the last usage chunk is the step total.
       return { usage: structuredClone(chunk.usage) };
     case 'finish':
       return {};
+  }
+}
+
+type ModelDeltaAtom =
+  | { readonly kind: 'text'; readonly value: string }
+  | { readonly kind: 'tool'; readonly call: ToolCallModelChunk };
+
+class ModelDeltaJournal {
+  readonly #runtime: StepRuntime;
+  readonly #stepId: string;
+  readonly #requestId: string;
+  readonly #atoms: ModelDeltaAtom[] = [];
+  #cursor = 0;
+
+  constructor(
+    runtime: StepRuntime,
+    stepId: string,
+    requestId: string,
+    persisted: readonly Extract<AgentEvent, { readonly type: 'model.delta' }>[],
+  ) {
+    this.#runtime = runtime;
+    this.#stepId = stepId;
+    this.#requestId = requestId;
+    for (const event of persisted) {
+      if (event.delta.kind === 'text') {
+        this.#atoms.push(
+          ...[...event.delta.text].map((value): ModelDeltaAtom => ({ kind: 'text', value })),
+        );
+        continue;
+      }
+      const call = recordedToolCall(event.delta.toolCallDelta);
+      if (call === undefined) {
+        throw new AgentLoopInvariantError(
+          `Persisted model tool delta for ${requestId} cannot be restored.`,
+        );
+      }
+      this.#atoms.push({ kind: 'tool', call });
+    }
+  }
+
+  async acceptText(text: string, signal: AbortSignal): Promise<void> {
+    const suffix: string[] = [];
+    for (const value of [...text]) {
+      const expected = this.#atoms[this.#cursor];
+      if (expected !== undefined) {
+        if (expected.kind !== 'text' || expected.value !== value) {
+          throw this.#diverged('text');
+        }
+      } else {
+        this.#atoms.push({ kind: 'text', value });
+        suffix.push(value);
+      }
+      this.#cursor += 1;
+    }
+    if (suffix.length === 0) {
+      return;
+    }
+    await this.#runtime.emit(
+      {
+        type: 'model.delta',
+        stepId: this.#stepId,
+        requestId: this.#requestId,
+        delta: { kind: 'text', text: suffix.join('') },
+      },
+      signal,
+    );
+  }
+
+  async acceptTool(call: ToolCallModelChunk, signal: AbortSignal): Promise<void> {
+    const expected = this.#atoms[this.#cursor];
+    let persist = false;
+    if (expected !== undefined) {
+      if (expected.kind !== 'tool' || !sameToolCall(expected.call, call)) {
+        throw this.#diverged('tool call');
+      }
+    } else {
+      this.#atoms.push({ kind: 'tool', call: structuredClone(call) });
+      persist = true;
+    }
+    this.#cursor += 1;
+    if (!persist) {
+      return;
+    }
+    await this.#runtime.emit(
+      {
+        type: 'model.delta',
+        stepId: this.#stepId,
+        requestId: this.#requestId,
+        delta: { kind: 'tool', toolCallDelta: toolCallToJson(call) },
+      },
+      signal,
+    );
+  }
+
+  rewind(): void {
+    this.#cursor = 0;
+  }
+
+  assertComplete(): void {
+    if (this.#cursor !== this.#atoms.length) {
+      throw this.#diverged('end of stream');
+    }
+  }
+
+  toolCalls(): readonly ToolCallModelChunk[] {
+    return this.#atoms
+      .filter(
+        (atom): atom is Extract<ModelDeltaAtom, { readonly kind: 'tool' }> => atom.kind === 'tool',
+      )
+      .map((atom) => structuredClone(atom.call));
+  }
+
+  #diverged(received: string): AgentLoopInvariantError {
+    return new AgentLoopInvariantError(
+      `Retried model output diverged from the persisted prefix for ${this.#requestId} at atom ${this.#cursor}; received ${received}.`,
+    );
   }
 }
 
@@ -594,6 +785,44 @@ function decodePromptedToolCall(text: string): ToolCallModelChunk | undefined {
 
 function toolCallToJson(call: Pick<ToolCallModelChunk, 'callId' | 'tool' | 'args'>): JsonObject {
   return { callId: call.callId, tool: call.tool, args: structuredClone(call.args) };
+}
+
+function sameToolCall(left: ToolCallModelChunk, right: ToolCallModelChunk): boolean {
+  return (
+    left.callId === right.callId && left.tool === right.tool && jsonEqual(left.args, right.args)
+  );
+}
+
+function jsonEqual(left: JsonValue, right: JsonValue): boolean {
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    return Object.is(left, right);
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => {
+        const candidate = right[index];
+        return candidate !== undefined && jsonEqual(value, candidate);
+      })
+    );
+  }
+  const leftObject = left as JsonObject;
+  const rightObject = right as JsonObject;
+  const leftKeys = Object.keys(leftObject).sort();
+  const rightKeys = Object.keys(rightObject).sort();
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key, index) => {
+      const rightKey = rightKeys[index];
+      const leftValue = leftObject[key];
+      const rightValue = rightObject[key];
+      return rightKey === key && leftValue !== undefined && rightValue !== undefined
+        ? jsonEqual(leftValue, rightValue)
+        : false;
+    })
+  );
 }
 
 function serializeError(error: unknown): JsonObject {
