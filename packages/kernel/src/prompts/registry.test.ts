@@ -13,7 +13,12 @@ describe('PromptRegistry', () => {
     expect(listed.map((prompt) => prompt.id)).toEqual(
       BUILTIN_PROMPTS.map((prompt) => prompt.id).sort(),
     );
-    expect(listed.every((prompt) => prompt.version === '1.0.0')).toBe(true);
+    expect(listed.find((prompt) => prompt.id === 'tool.protocol.prompted')?.version).toBe('1.1.0');
+    expect(
+      listed
+        .filter((prompt) => prompt.id !== 'tool.protocol.prompted')
+        .every((prompt) => prompt.version === '1.0.0'),
+    ).toBe(true);
     expect(prompts.get('system.identity')).toBe(prompts.require('system.identity'));
     expect(prompts.get('missing')).toBeUndefined();
     expect(() => prompts.require('missing')).toThrow(PromptRegistryError);
@@ -22,7 +27,7 @@ describe('PromptRegistry', () => {
       {
         kind: 'builtin',
         id: '@openagentcore/kernel',
-        version: '1.0.0',
+        version: '1.1.0',
         promptCount: BUILTIN_PROMPTS.length,
       },
     ]);

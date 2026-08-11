@@ -27,6 +27,7 @@ import {
   AgentLoopCrashError,
   AgentLoopInvariantError,
   PROMPTED_TOOL_CALL_PREFIX,
+  PROMPTED_TOOL_RESULT_PREFIX,
 } from './agent-loop.js';
 import { projectSessionState } from './session-state.js';
 
@@ -145,6 +146,11 @@ describe('AgentLoop', () => {
     expect(result.usage).toEqual(usage(11, 3, 0.05));
     expect(model.requests).toHaveLength(2);
     expect(model.requests[1]?.messages).toContainEqual({
+      role: 'assistant',
+      content: '',
+      toolCalls: [{ callId: 'call-1', tool: 'echo', args: { text: 'ping' } }],
+    });
+    expect(model.requests[1]?.messages).toContainEqual({
       role: 'tool',
       content: '{"text":"ping"}',
       toolCallId: 'call-1',
@@ -166,6 +172,34 @@ describe('AgentLoop', () => {
       'turn.finished',
     ]);
     await expectClosedAndSchemaValid(log, 'done');
+  });
+
+  it('groups parallel native calls into one structured assistant message', async () => {
+    const model = new ScriptedModelPort([
+      [
+        toolCall('call-a', 'echo', { value: 'a' }),
+        toolCall('call-b', 'echo', { value: 'b' }),
+        { kind: 'finish', reason: 'tool-calls' },
+      ],
+      [
+        { kind: 'text', text: 'Both calls complete.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
+    const { loop } = createLoop(model, {
+      tools: new ToolRegistry().register(new EchoTool()),
+    });
+
+    await loop.runTurn({ content: 'Echo twice.' });
+
+    expect(model.requests[1]?.messages).toContainEqual({
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        { callId: 'call-a', tool: 'echo', args: { value: 'a' } },
+        { callId: 'call-b', tool: 'echo', args: { value: 'b' } },
+      ],
+    });
   });
 
   it('applies sliding-window compaction repeatedly across tool call and result content', async () => {
@@ -247,6 +281,15 @@ describe('AgentLoop', () => {
       capabilityDowngrades: ['tool-use:native->prompted'],
     });
     expect(model.requests[0]?.toolUse).toBe('prompted');
+    expect(model.requests[0]?.messages[0]?.content).toContain('"name":"echo"');
+    expect(model.requests[1]?.messages).toContainEqual({
+      role: 'user',
+      content: `${PROMPTED_TOOL_RESULT_PREFIX}${JSON.stringify({
+        callId: 'call-prompted',
+        result: { text: 'degraded' },
+      })}`,
+    });
+    expect(model.requests[1]?.messages.some((message) => message.role === 'tool')).toBe(false);
     expect(result.events).toContainEqual(
       expect.objectContaining({
         type: 'tool.result',

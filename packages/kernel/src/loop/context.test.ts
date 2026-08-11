@@ -55,7 +55,7 @@ describe('AgentLoop context assembly', () => {
     expect(result.report).toContain('Capability downgrades: tool-use:native->prompted');
     expect(result.report).toContain('Total tokens:');
     expect(result.report).toContain(
-      'system.identity from builtin/@openagentcore/kernel@1.0.0 (replace, prompt 1.0.0)',
+      'system.identity from builtin/@openagentcore/kernel@1.1.0 (replace, prompt 1.0.0)',
     );
     expect(result.report).toContain(
       'system.identity from runtime/runtime@runtime-identity-v1 (append, prompt runtime-identity-v1)',

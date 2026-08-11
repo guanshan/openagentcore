@@ -13,11 +13,18 @@ export interface ModelCapabilities {
 
 export type ModelMessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
+export interface ModelMessageToolCall {
+  readonly callId: string;
+  readonly tool: string;
+  readonly args: JsonValue;
+}
+
 export interface ModelMessage {
   readonly role: ModelMessageRole;
   readonly content: string;
   readonly name?: string;
   readonly toolCallId?: string;
+  readonly toolCalls?: readonly ModelMessageToolCall[];
 }
 
 export interface ModelToolDefinition {

@@ -36,6 +36,7 @@ export type {
   CompactionAppliedEvent,
   ContextAssembly,
   ContextAssemblyMessage,
+  ContextAssemblyToolCall,
   ContextAssemblyTool,
   ContextSegment,
   ContextSegmentSource,
@@ -99,6 +100,7 @@ export type {
   ModelFinishReason,
   ModelMessage,
   ModelMessageRole,
+  ModelMessageToolCall,
   ModelPort,
   ModelPortErrorKind,
   ModelPortErrorOptions,
@@ -227,6 +229,7 @@ export {
   AgentLoopCrashError,
   AgentLoopInvariantError,
   PROMPTED_TOOL_CALL_PREFIX,
+  PROMPTED_TOOL_RESULT_PREFIX,
   UnknownToolResultError,
 } from './loop/agent-loop.js';
 export { formatContextAssembly } from './loop/context.js';

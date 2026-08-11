@@ -60,7 +60,7 @@ import {
   type SessionReplayState,
 } from './session-state.js';
 
-export { PROMPTED_TOOL_CALL_PREFIX } from './context.js';
+export { PROMPTED_TOOL_CALL_PREFIX, PROMPTED_TOOL_RESULT_PREFIX } from './context.js';
 export { UnknownToolResultError } from './recovery.js';
 export { AgentLoopCrashError, AgentLoopInvariantError } from './step.js';
 

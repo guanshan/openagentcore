@@ -20,6 +20,7 @@ interface AssistantMessageProjectionEntry {
 
 interface ToolCallProjectionEntry {
   readonly kind: 'tool-call';
+  readonly stepId?: string;
   readonly callId: string;
   readonly tool: string;
   readonly args: JsonValue;
@@ -72,6 +73,7 @@ interface AssistantMessageHistoryItem {
 
 interface ToolCallHistoryItem {
   readonly kind: 'tool-call';
+  readonly stepId?: string;
   readonly callId: string;
   readonly tool: string;
   readonly args: JsonValue;
@@ -175,6 +177,7 @@ function applyEventToEntries(entries: MessageProjectionEntry[], event: AgentEven
     case 'tool.call':
       entries.push({
         kind: 'tool-call',
+        ...(event.stepId === undefined ? {} : { stepId: event.stepId }),
         callId: event.callId,
         tool: event.tool,
         args: structuredClone(event.args),
@@ -485,6 +488,8 @@ function validateMessageProjectionEntries(entries: readonly MessageProjectionEnt
         break;
       case 'tool-call':
         if (
+          (entry.stepId !== undefined &&
+            (typeof entry.stepId !== 'string' || entry.stepId.length === 0)) ||
           typeof entry.callId !== 'string' ||
           entry.callId.length === 0 ||
           typeof entry.tool !== 'string' ||
@@ -676,6 +681,7 @@ function materializeEntry(entry: MessageProjectionEntry): MessageHistoryItem {
     case 'tool-call':
       return {
         kind: 'tool-call',
+        ...(entry.stepId === undefined ? {} : { stepId: entry.stepId }),
         callId: entry.callId,
         tool: entry.tool,
         args: entry.args,
