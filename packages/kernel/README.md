@@ -1,3 +1,5 @@
 # @openagentcore/kernel（L1）
 
-无 IO 依赖的内核：事件溯源 Agent Loop、Strategy/Middleware/Prompt 三大扩展机制、五个 Port 接口与 Null Object 默认实现。可嵌入浏览器、Electron、任意后端进程。
+`@openagentcore/kernel` 是无网络与磁盘 IO、运行时依赖为零的事件溯源内核。当前提供 AgentEvent、EventLog、SnapshotStore、消息与 Session 投影、可恢复的 `AgentLoop`、Model/Tool Port、Strategy 注册表及五条 Middleware 管道。
+
+`ScriptedModelPort` 与测试工具用于确定性测试和示例，不包含真实 Provider。Prompt 系统计划在 M0-3 实现；Runtime、UI 与 CLI 位于上层包。
