@@ -104,7 +104,10 @@ describe('MiddlewareRegistry', () => {
         await next();
       })
       .use('tool', async (context) => {
-        context.result = { intercepted: context.request.callId };
+        context.result = {
+          outcome: 'succeeded',
+          result: { intercepted: context.request.callId },
+        };
       })
       .use('context', async (context, next) => {
         context.messages.push({ role: 'user', content: 'context-mw' });
@@ -137,7 +140,10 @@ describe('MiddlewareRegistry', () => {
       error: undefined,
     };
     await registry.run('tool', toolContext);
-    expect(toolContext.result).toEqual({ intercepted: 'call-1' });
+    expect(toolContext.result).toEqual({
+      outcome: 'succeeded',
+      result: { intercepted: 'call-1' },
+    });
 
     const contextContext = {
       ...baseContext,

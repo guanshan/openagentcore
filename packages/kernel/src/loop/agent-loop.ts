@@ -34,7 +34,7 @@ import {
   type StopStrategyInput,
 } from '../strategy/builtins.js';
 import type { Strategy, StrategyMetricsSnapshot, StrategyRegistry } from '../strategy/registry.js';
-import type { Tool, ToolExecutionRequest } from '../tools/tool.js';
+import type { Tool, ToolExecutionRequest, ToolExecutionResult } from '../tools/tool.js';
 import { ToolRegistry } from '../tools/tool.js';
 import {
   createCostAccountingMiddleware,
@@ -655,7 +655,7 @@ export class AgentLoop {
   ): Promise<boolean> {
     let attempt = firstAttempt;
     while (true) {
-      let result: JsonValue;
+      let result: ToolExecutionResult;
       try {
         result = await this.#invokeTool(
           tool,
@@ -691,8 +691,8 @@ export class AgentLoop {
           type: 'tool.result',
           stepId,
           callId: call.callId,
-          result,
-          outcome: 'succeeded',
+          result: result.result,
+          outcome: result.outcome,
           attempts: attempt,
         },
         signal,
@@ -707,7 +707,7 @@ export class AgentLoop {
     turnId: string,
     stepId: string,
     signal: AbortSignal,
-  ): Promise<JsonValue> {
+  ): Promise<ToolExecutionResult> {
     const context: ToolMiddlewareContext = {
       ...this.#middlewareContext(signal, turnId, stepId),
       tool,

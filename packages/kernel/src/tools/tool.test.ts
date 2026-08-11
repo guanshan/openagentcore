@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EchoTool,
   FailingTool,
+  ResultFailingTool,
   SlowTool,
   ToolRegistry,
   ToolRegistryError,
@@ -47,14 +48,20 @@ describe('ToolRegistry', () => {
       permission: { kind: 'read' },
       async execute(request, executionSignal) {
         executionSignal.throwIfAborted();
-        return { callId: request.callId, attempt: request.attempt };
+        return {
+          outcome: 'succeeded',
+          result: { callId: request.callId, attempt: request.attempt },
+        };
       },
     };
     const registry = new ToolRegistry().register(custom, { groups: ['external'] });
 
     await expect(
       registry.require('custom').execute({ callId: 'call-custom', args: null, attempt: 2 }, signal),
-    ).resolves.toEqual({ callId: 'call-custom', attempt: 2 });
+    ).resolves.toEqual({
+      outcome: 'succeeded',
+      result: { callId: 'call-custom', attempt: 2 },
+    });
   });
 });
 
@@ -63,7 +70,10 @@ describe('scripted tools', () => {
     const tool = new EchoTool();
     const request = { callId: 'stable-call-id', args: { text: 'hello' }, attempt: 3 } as const;
 
-    await expect(tool.execute(request, signal)).resolves.toEqual(request.args);
+    await expect(tool.execute(request, signal)).resolves.toEqual({
+      outcome: 'succeeded',
+      result: request.args,
+    });
     expect(tool.requests).toEqual([request]);
   });
 
@@ -73,6 +83,18 @@ describe('scripted tools', () => {
     const request = { callId: 'call-fail', args: null, attempt: 1 } as const;
 
     await expect(tool.execute(request, signal)).rejects.toBe(error);
+    expect(tool.requests).toEqual([request]);
+  });
+
+  it('reports a completed failed result without throwing', async () => {
+    const result = { exitCode: 1, stderr: 'tests failed' } as const;
+    const tool = new ResultFailingTool(result);
+    const request = { callId: 'call-result-fail', args: null, attempt: 1 } as const;
+
+    await expect(tool.execute(request, signal)).resolves.toEqual({
+      outcome: 'failed',
+      result,
+    });
     expect(tool.requests).toEqual([request]);
   });
 

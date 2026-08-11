@@ -13,7 +13,14 @@ import {
   type StopStrategyInput,
 } from '../strategy/builtins.js';
 import type { KernelPorts, Strategy, StrategyContext } from '../strategy/registry.js';
-import { EchoTool, FailingTool, SlowTool, ToolRegistry, type Tool } from '../tools/tool.js';
+import {
+  EchoTool,
+  FailingTool,
+  ResultFailingTool,
+  SlowTool,
+  ToolRegistry,
+  type Tool,
+} from '../tools/tool.js';
 import { AgentLoop, AgentLoopCrashError, PROMPTED_TOOL_CALL_PREFIX } from './agent-loop.js';
 import { projectSessionState } from './session-state.js';
 
@@ -361,6 +368,39 @@ describe('AgentLoop', () => {
       error: { name: 'Error', message: 'boom' },
     });
     await expectClosedAndSchemaValid(log, 'failed');
+  });
+
+  it('feeds a completed failed result to the model without retrying or failing the turn', async () => {
+    const failedResult = { exitCode: 1, stderr: 'tests failed' } as const;
+    const tool = new ResultFailingTool(failedResult);
+    const model = new ScriptedModelPort([
+      [
+        toolCall('call-result-fail', 'result-failing', null),
+        { kind: 'finish', reason: 'tool-calls' },
+      ],
+      [
+        { kind: 'text', text: 'Adjusted after the test failure.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
+    const { loop } = createLoop(model, {
+      tools: new ToolRegistry().register(tool),
+    });
+
+    const result = await loop.runTurn({ content: 'Run the tests.' });
+
+    expect(result.stopReason).toBe('completed');
+    expect(tool.requests).toHaveLength(1);
+    const failureEvent = result.events.find(
+      (event) => event.type === 'tool.result' && event.callId === 'call-result-fail',
+    );
+    expect(failureEvent).toMatchObject({ outcome: 'failed', result: failedResult });
+    expect(failureEvent).not.toHaveProperty('error');
+    expect(model.requests[1]?.messages).toContainEqual({
+      role: 'tool',
+      content: JSON.stringify(failedResult),
+      toolCallId: 'call-result-fail',
+    });
   });
 
   it('does not retry a tool when event middleware throws after its result is persisted', async () => {
@@ -882,6 +922,6 @@ class CrashOnceTool implements Tool {
       this.#crash = false;
       throw new AgentLoopCrashError('simulated process loss');
     }
-    return structuredClone(request.args);
+    return { outcome: 'succeeded' as const, result: structuredClone(request.args) };
   }
 }

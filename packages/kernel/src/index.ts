@@ -81,10 +81,18 @@ export type {
   UsageModelChunk,
 } from './ports/model.js';
 
-export { EchoTool, FailingTool, SlowTool, ToolRegistry, ToolRegistryError } from './tools/tool.js';
+export {
+  EchoTool,
+  FailingTool,
+  ResultFailingTool,
+  SlowTool,
+  ToolRegistry,
+  ToolRegistryError,
+} from './tools/tool.js';
 export type {
   Tool,
   ToolExecutionRequest,
+  ToolExecutionResult,
   ToolPermissionDescriptor,
   ToolPort,
   ToolRegistrationOptions,

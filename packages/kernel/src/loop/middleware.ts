@@ -5,7 +5,7 @@ import type {
   ModelRequest,
   ModelToolDefinition,
 } from '../ports/model.js';
-import type { Tool, ToolExecutionRequest } from '../tools/tool.js';
+import type { Tool, ToolExecutionRequest, ToolExecutionResult } from '../tools/tool.js';
 
 export type MiddlewareNext = () => Promise<void>;
 
@@ -63,7 +63,7 @@ export interface ModelMiddlewareContext extends MiddlewareBaseContext {
 export interface ToolMiddlewareContext extends MiddlewareBaseContext {
   tool: Tool;
   request: ToolExecutionRequest;
-  result: JsonValue | undefined;
+  result: ToolExecutionResult | undefined;
   error: unknown;
 }
 
