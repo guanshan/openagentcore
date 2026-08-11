@@ -35,7 +35,6 @@ interface SummaryProjectionEntry {
   readonly content: string;
   readonly dropped: EventRange;
   readonly representedRanges: readonly EventRange[];
-  readonly positionSeq: number;
   readonly sourceSeq: number;
 }
 
@@ -84,6 +83,7 @@ interface SummaryHistoryItem {
   readonly kind: 'summary';
   readonly content: string;
   readonly dropped: EventRange;
+  readonly representedRanges: readonly EventRange[];
   readonly sourceSeqs: readonly number[];
 }
 
@@ -156,6 +156,9 @@ export function applyEventToMessageProjection(
     case 'checkpoint.created':
     case 'turn.finished':
       return state;
+
+    default:
+      return rejectUnknownEvent(event);
   }
 }
 
@@ -254,30 +257,22 @@ function applyCompaction(
     }
   });
 
-  const firstDroppedIndex = state.entries.findIndex((_, index) => droppedIndexes.has(index));
   const retained = state.entries.filter((_, index) => !droppedIndexes.has(index));
-
-  let insertionIndex: number;
-  if (firstDroppedIndex >= 0) {
-    insertionIndex = state.entries
-      .slice(0, firstDroppedIndex)
-      .filter((_, index) => !droppedIndexes.has(index)).length;
-  } else {
-    const nextIndex = retained.findIndex((entry) => projectionPosition(entry) > dropped.toSeq);
-    insertionIndex = nextIndex < 0 ? retained.length : nextIndex;
-  }
+  const representedRanges = normalizeRanges([
+    dropped,
+    ...removedSummaries.flatMap((entry) => entry.representedRanges),
+  ]);
 
   const compacted: SummaryProjectionEntry = {
     kind: 'summary',
     content: summary,
     dropped,
-    representedRanges: normalizeRanges([
-      dropped,
-      ...removedSummaries.flatMap((entry) => entry.representedRanges),
-    ]),
-    positionSeq: Math.min(dropped.fromSeq, ...removedSummaries.map((entry) => entry.positionSeq)),
+    representedRanges,
     sourceSeq: compactionSeq,
   };
+  const compactedPosition = projectionPosition(compacted);
+  const nextIndex = retained.findIndex((entry) => projectionPosition(entry) > compactedPosition);
+  const insertionIndex = nextIndex < 0 ? retained.length : nextIndex;
 
   return {
     entries: [...retained.slice(0, insertionIndex), compacted, ...retained.slice(insertionIndex)],
@@ -285,7 +280,9 @@ function applyCompaction(
 }
 
 function projectionPosition(entry: MessageProjectionEntry): number {
-  return entry.kind === 'summary' ? entry.positionSeq : entry.sourceSeq;
+  return entry.kind === 'summary'
+    ? Math.max(...entry.representedRanges.map((range) => range.toSeq))
+    : entry.sourceSeq;
 }
 
 function containsSeq(range: EventRange, seq: number): boolean {
@@ -356,7 +353,15 @@ function materializeEntry(entry: MessageProjectionEntry): MessageHistoryItem {
         kind: 'summary',
         content: entry.content,
         dropped: entry.dropped,
+        representedRanges: entry.representedRanges.map((range) => ({ ...range })),
         sourceSeqs: [entry.sourceSeq],
       };
   }
+}
+
+function rejectUnknownEvent(event: never): never {
+  const unknownEvent = event as { readonly type?: unknown; readonly seq?: unknown };
+  throw new ProjectionInvariantError(
+    `Unknown event type ${JSON.stringify(unknownEvent.type)} at seq ${String(unknownEvent.seq)}.`,
+  );
 }

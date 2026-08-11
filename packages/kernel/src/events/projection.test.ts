@@ -173,6 +173,7 @@ describe('message history projection', () => {
         kind: 'summary',
         content: 'B was compacted.',
         dropped: { fromSeq: 2, toSeq: 2 },
+        representedRanges: [{ fromSeq: 2, toSeq: 2 }],
         sourceSeqs: [4],
       },
       {
@@ -198,6 +199,59 @@ describe('message history projection', () => {
         kind: 'summary',
         content: 'Replacement summary.',
         dropped: { fromSeq: 2, toSeq: 2 },
+        representedRanges: [{ fromSeq: 0, toSeq: 2 }],
+        sourceSeqs: [3],
+      },
+    ]);
+  });
+
+  it('positions a folded summary after the maximum sequence it represents', async () => {
+    const projection = await projectMessageHistory([
+      modelDelta(0, 'A'),
+      modelDelta(1, 'B'),
+      modelDelta(2, 'C'),
+      modelDelta(3, 'D'),
+      modelDelta(4, 'E'),
+      compaction(5, 0, 1, 'AB was compacted.'),
+      modelDelta(6, 'F'),
+      compaction(7, 5, 6, 'Earlier summary and F were compacted.'),
+    ]);
+
+    expect(materializeMessageHistory(projection)).toEqual([
+      {
+        kind: 'message',
+        role: 'assistant',
+        stepId: 'step-1',
+        content: 'CDE',
+        sourceSeqs: [2, 3, 4],
+      },
+      {
+        kind: 'summary',
+        content: 'Earlier summary and F were compacted.',
+        dropped: { fromSeq: 5, toSeq: 6 },
+        representedRanges: [
+          { fromSeq: 0, toSeq: 1 },
+          { fromSeq: 5, toSeq: 6 },
+        ],
+        sourceSeqs: [7],
+      },
+    ]);
+  });
+
+  it('preserves every represented range when materializing a folded summary', async () => {
+    const projection = await projectMessageHistory([
+      turnStarted(0),
+      modelDelta(1, 'A'),
+      compaction(2, 0, 1, 'First summary.'),
+      compaction(3, 2, 2, 'Second summary.'),
+    ]);
+
+    expect(materializeMessageHistory(projection)).toEqual([
+      {
+        kind: 'summary',
+        content: 'Second summary.',
+        dropped: { fromSeq: 2, toSeq: 2 },
+        representedRanges: [{ fromSeq: 0, toSeq: 2 }],
         sourceSeqs: [3],
       },
     ]);
@@ -215,6 +269,7 @@ describe('message history projection', () => {
         kind: 'summary',
         content: 'Replacement summary.',
         dropped: { fromSeq: 0, toSeq: 0 },
+        representedRanges: [{ fromSeq: 0, toSeq: 0 }],
         sourceSeqs: [2],
       },
     ]);
@@ -241,6 +296,19 @@ describe('message history projection', () => {
     );
     expect(() => applyEventToMessageProjection(initial, compaction(4, 1, 4, 'bad'))).toThrow(
       ProjectionInvariantError,
+    );
+  });
+
+  it('rejects an unknown runtime event with its type and sequence', () => {
+    const unknownEvent = {
+      type: 'model.future-delta',
+      seq: 42,
+      ...identity,
+      ts: timestamp,
+    } as unknown as AgentEvent;
+
+    expect(() => applyEventToMessageProjection(createMessageProjection(), unknownEvent)).toThrow(
+      new ProjectionInvariantError('Unknown event type "model.future-delta" at seq 42.'),
     );
   });
 });

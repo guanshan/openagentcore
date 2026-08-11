@@ -37,7 +37,7 @@
 - `EventRange` 使用包含端点的 `fromSeq` 与 `toSeq`，并满足 `0 <= fromSeq <= toSeq < compaction event seq`。跨字段大小关系由投影语义校验。
 - `StopReason` 当前只约束为非空字符串；正式枚举留待 AgentLoop 契约定义。
 
-Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。重复或扩大已摘要的完整区间会替换旧摘要；显式折叠旧 `compaction.applied` 事件时，新摘要继承其代表的历史区间；只与现有摘要区间部分重叠的事件流会被投影拒绝。
+Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。重复或扩大已摘要的完整区间会替换旧摘要；显式折叠旧 `compaction.applied` 事件时，新摘要继承其完整 `representedRanges`。摘要按全部代表区间中的最大 `seq` 定位，保证与保留事件的时间顺序一致；只与现有摘要区间部分重叠的事件流会被投影拒绝。
 
 ## Trajectory v0
 
