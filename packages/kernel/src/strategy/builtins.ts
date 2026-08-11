@@ -8,11 +8,11 @@ import {
   type StrategyMetrics,
 } from './registry.js';
 
-export type StepOutcome = 'completed' | 'model-error' | 'tool-error' | 'permission-denied';
+export type StopStepOutcome = 'completed' | 'model-error' | 'tool-error' | 'permission-denied';
 
 export interface StopStrategyInput {
   readonly completedSteps: number;
-  readonly lastStepOutcome: StepOutcome | undefined;
+  readonly lastStepOutcome: StopStepOutcome | undefined;
   readonly lastStepHadToolCalls: boolean;
 }
 

@@ -208,6 +208,21 @@ describe('cost accounting middleware', () => {
     });
   });
 
+  it('does not count a step when the event pipeline short-circuits before append', async () => {
+    const accounting = createCostAccountingMiddleware();
+    const skipped = createEventContext(
+      stepFinished(1, { inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
+    );
+    skipped.persisted = false;
+    await accounting(skipped, async () => {});
+
+    const finished = createEventContext(turnFinished(2));
+    await accounting(finished, async () => {});
+    expect(finished.event).toMatchObject({
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    });
+  });
+
   it('rejects mixed currencies before appending the incompatible step', async () => {
     const accounting = createCostAccountingMiddleware();
     await accounting(
@@ -236,7 +251,7 @@ describe('cost accounting middleware', () => {
 });
 
 function createEventContext(event: AgentEvent): EventMiddlewareContext {
-  return { ...baseContext, event };
+  return { ...baseContext, event, persisted: true };
 }
 
 function eventBase(seq: number) {

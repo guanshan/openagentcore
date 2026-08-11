@@ -81,6 +81,8 @@ export interface MemoryMiddlewareContext extends MiddlewareBaseContext {
 
 export interface EventMiddlewareContext extends MiddlewareBaseContext {
   event: AgentEvent;
+  /** Set by the append terminal only after the event is durably accepted. */
+  persisted: boolean;
 }
 
 export interface MiddlewareContextMap {
@@ -163,9 +165,14 @@ export function createCostAccountingMiddleware(): Middleware<EventMiddlewareCont
 
     if (event.type === 'step.finished' && key !== undefined) {
       const existing = usageByTurn.get(key) ?? emptyUsage();
-      const combined = addUsage(existing, event.usage);
+      const proposed = addUsage(existing, event.usage);
       await next();
-      usageByTurn.set(key, combined);
+      if (context.persisted && context.event.type === 'step.finished') {
+        usageByTurn.set(
+          key,
+          context.event === event ? proposed : addUsage(existing, context.event.usage),
+        );
+      }
       return;
     }
 
@@ -173,7 +180,9 @@ export function createCostAccountingMiddleware(): Middleware<EventMiddlewareCont
       const usage = usageByTurn.get(key) ?? emptyUsage();
       context.event = { ...event, usage: finalizeUsage(usage) };
       await next();
-      usageByTurn.delete(key);
+      if (context.persisted) {
+        usageByTurn.delete(key);
+      }
       return;
     }
 
