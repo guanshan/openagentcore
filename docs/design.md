@@ -95,6 +95,20 @@ interface TracePort { /* OpenTelemetry GenAI 语义，见 §12 */ }
 
 **反腐层（Anti-Corruption Layer）**：每个云厂商 Adapter 内部消化该厂商 SDK 的概念与怪癖，不允许厂商类型泄漏进 Kernel API。厂商 SDK 升级只影响单个 provider 包。
 
+### 2.3 协议对齐：采标不自造
+
+凡是已有广泛采用的开放协议的地方，直接采用并锁定最新版本；OAC 只定义标准未覆盖的扩展语义，放独立命名空间（`oac.*`），并优先推动上游化：
+
+| 协议 | 采用版本（2026-08 核查） | 用途 | 要点 |
+| --- | --- | --- | --- |
+| MCP | 2026-07-28 | 工具/资源接入（client）与对外暴露（server） | 无状态协议核心、Streamable HTTP + stdio 传输、正式扩展框架 |
+| A2A | v1.0（Linux Foundation 治理） | 跨 agent 委托与互操作 | 签名 AgentCard、多协议传输（JSON-RPC / gRPC / REST）、150+ 组织采用 |
+| AG-UI | 跟随主线 | agent ↔ 前端事件流（§11.1） | 单一 JSON 事件序列、双向共享状态、TS/Python 等多语言 SDK |
+| OpenTelemetry GenAI 语义约定 | 跟随 semconv 主线 | 可观测（§12） | 各家后端只是 exporter |
+| OpenAI-compatible API | 事实标准 | 模型接入的入口与出口（§7.4 / §11.2） | 一个 adapter 通吃网关生态 |
+
+协议版本锁定记录在 `spec/`（每协议一个锁定版本，升级走 ADR），conformance 向量随协议升级同步更新。
+
 ---
 
 ## 3. 领域模型
@@ -257,7 +271,7 @@ SubAgent ────┘   （子 agent 也是一种工具——Composite 视角
 
 - **ToolGroup（Composite）**：工具可分组挂载/卸载，组可以嵌套（如 `git/*`、`fs/readonly/*`），权限策略按组配置。
 - **动态发现**：工具多时用 `deferred-search` 策略——只暴露工具名录，模型按需拉取 schema（参考 ToolSearch 的做法），省 context。
-- **MCP**：Kernel 内建 MCP client（stdio/HTTP/SSE 三传输）；L3 Runtime 提供 MCP server（把 OAC agent 反向暴露为别人的 MCP 工具）。
+- **MCP**：跟随 2026-07-28 版规范（无状态协议核心、正式扩展框架）。Kernel 内建 MCP client，支持 stdio + Streamable HTTP 双传输（不实现已废弃的 HTTP+SSE 旧传输）；L3 Runtime 提供 MCP server（把 OAC agent 反向暴露为别人的 MCP 工具）——无状态核心使其天然可水平扩展。
 - **Connector 规范**：connector = 带 manifest（名称/版本/权限声明/凭证 scope）的工具包，统一打包格式，为社区 registry 铺路。
 
 ### 6.2 Skill 注入
@@ -271,7 +285,7 @@ Skill = 指令 + 资源 + 可选工具的可安装包（对齐 Claude Skills / a
 ### 6.3 SubAgent 与 A2A
 
 - **进程内 SubAgent**：fork 出隔离 context 的子循环，父子通过事件桥接；预算控制（token/步数/时间）在 spawn 参数里强制声明。
-- **A2A 协议**：L3 Runtime 实现 A2A server/client——AgentCard 发布、任务委托、长任务异步回调。**远程 agent 在 Kernel 视角也只是一个 Tool（Adapter + Proxy）**，编排逻辑不感知本地/远程差异。
+- **A2A 协议**：对齐 v1.0（Linux Foundation 治理）。L3 Runtime 实现 A2A server/client——签名 AgentCard 发布与验证、任务委托、长任务异步回调，传输优先 JSON-RPC，gRPC/REST 按需。**远程 agent 在 Kernel 视角也只是一个 Tool（Adapter + Proxy）**，编排逻辑不感知本地/远程差异。
 
 ### 6.4 Coding Agent 能力包（`@openagentcore/coding`）
 
@@ -396,7 +410,7 @@ history → [memory 注入] → [skill 注入] → [compaction] → [slot 拼装
 
 ### 11.1 UI 线协议（L0 Spec 的一部分）
 
-Agent 运行时与 UI 之间的流式事件协议（对齐 AG-UI 思路）：文本增量、工具卡片、diff、审批请求、进度、成本。**同一协议服务三种形态**：
+直接采用 **AG-UI** 作为 agent ↔ 前端事件流的协议基座（单一 JSON 事件序列、双向共享状态、多语言 SDK 与活跃社区生态），不自造线协议。AG-UI 未覆盖的语义——审批请求/回填、diff 审查、成本计量——定义为 `oac.*` 扩展事件，独立命名空间，成熟后向上游提案。**同一协议服务三种形态**：
 
 | 形态 | 拓扑 |
 | --- | --- |
@@ -594,7 +608,7 @@ packages/kernel/src/
 
 1. 已定名 **OpenAgentCore**（2026-08-11 核查 npm / PyPI / GitHub 均无占用）。遗留：与 AWS Bedrock AgentCore 的商标摩擦风险需评估，正式发布前保留改名余地。
 2. Sandbox 的文件系统语义统一（本地 FS vs 远程沙箱 FS 的路径映射与延迟差异）——需要单独设计文档。
-3. UI 线协议是自定义还是直接采用/扩展 AG-UI 标准——倾向兼容 AG-UI，待评估其审批/diff 语义覆盖度。
+3. 已决定采用 AG-UI 作为 UI 线协议基座（§2.3、§11.1）；遗留：审批/diff/成本等 `oac.*` 扩展事件的 schema 设计，以及是否向 AG-UI 上游提案。
 4. A2A 与 MCP 的鉴权模型如何与 Vault 打通（远端凭证委托）。
 5. 事件流的 schema 演进策略（事件版本化 vs upcaster 链）。
 6. 双语言维护成本：Python 侧是否允许某些 L4 组件（UI Kit）只有 TS 实现。
