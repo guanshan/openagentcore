@@ -293,8 +293,23 @@ export class AgentLoop {
     this.#activeUsage = modelResult.usage;
     let failed = false;
 
+    // Persist the complete batch of model-selected intents before any tool can cause a side effect.
     for (const call of modelResult.calls) {
-      const outcome = await this.#executeNewToolCall(turnId, stepId, call, signal);
+      await this.#emit(
+        {
+          type: 'tool.call',
+          stepId,
+          callId: call.callId,
+          tool: call.tool,
+          args: structuredClone(call.args),
+          modelUsage: this.#activeUsage,
+        },
+        signal,
+      );
+    }
+
+    for (const call of modelResult.calls) {
+      const outcome = await this.#executeRecordedToolCall(turnId, stepId, call, signal);
       failed ||= !outcome;
     }
 
@@ -340,6 +355,63 @@ export class AgentLoop {
     let recordedChunks = 0;
     let requestRecorded = false;
     let countedInputTokens = 0;
+    let promptedTextBuffer: string | undefined;
+
+    const acceptRecordedChunk = (recorded: {
+      readonly call?: ToolCallModelChunk;
+      readonly usage?: ModelUsage;
+    }): void => {
+      if (recorded.call !== undefined) {
+        calls.push(recorded.call);
+      }
+      usage = recorded.usage ?? usage;
+      if (recorded.usage !== undefined) {
+        this.#activeUsage = recorded.usage;
+      }
+    };
+
+    const flushPromptedText = async (): Promise<void> => {
+      if (promptedTextBuffer === undefined) {
+        return;
+      }
+      const text = promptedTextBuffer;
+      promptedTextBuffer = undefined;
+      acceptRecordedChunk(
+        await this.#recordModelChunk(
+          { kind: 'text', text },
+          text.startsWith(PROMPTED_TOOL_CALL_PREFIX) ? 'prompted' : 'none',
+          stepId,
+          requestId,
+          signal,
+        ),
+      );
+    };
+
+    const recordChunk = async (chunk: ModelChunk): Promise<void> => {
+      if (context.request.toolUse === 'prompted' && chunk.kind === 'text') {
+        const combined = (promptedTextBuffer ?? '') + chunk.text;
+        if (
+          promptedTextBuffer !== undefined ||
+          PROMPTED_TOOL_CALL_PREFIX.startsWith(combined) ||
+          combined.startsWith(PROMPTED_TOOL_CALL_PREFIX)
+        ) {
+          promptedTextBuffer = combined;
+          if (
+            !PROMPTED_TOOL_CALL_PREFIX.startsWith(combined) &&
+            !combined.startsWith(PROMPTED_TOOL_CALL_PREFIX)
+          ) {
+            await flushPromptedText();
+          }
+          return;
+        }
+      }
+      if (chunk.kind === 'finish') {
+        await flushPromptedText();
+      }
+      acceptRecordedChunk(
+        await this.#recordModelChunk(chunk, context.request.toolUse, stepId, requestId, signal),
+      );
+    };
 
     const recordRequest = async (): Promise<void> => {
       if (requestRecorded) {
@@ -369,20 +441,7 @@ export class AgentLoop {
       };
       for await (const chunk of this.model.stream(context.request, signal)) {
         context.chunks.push(structuredClone(chunk));
-        const recorded = await this.#recordModelChunk(
-          chunk,
-          context.request.toolUse,
-          stepId,
-          requestId,
-          signal,
-        );
-        if (recorded.call !== undefined) {
-          calls.push(recorded.call);
-        }
-        usage = recorded.usage ?? usage;
-        if (recorded.usage !== undefined) {
-          this.#activeUsage = recorded.usage;
-        }
+        await recordChunk(chunk);
         recordedChunks += 1;
       }
     });
@@ -390,21 +449,9 @@ export class AgentLoop {
     await recordRequest();
 
     for (const chunk of context.chunks.slice(recordedChunks)) {
-      const recorded = await this.#recordModelChunk(
-        chunk,
-        context.request.toolUse,
-        stepId,
-        requestId,
-        signal,
-      );
-      if (recorded.call !== undefined) {
-        calls.push(recorded.call);
-      }
-      usage = recorded.usage ?? usage;
-      if (recorded.usage !== undefined) {
-        this.#activeUsage = recorded.usage;
-      }
+      await recordChunk(chunk);
     }
+    await flushPromptedText();
 
     return {
       calls,
@@ -527,23 +574,12 @@ export class AgentLoop {
     };
   }
 
-  async #executeNewToolCall(
+  async #executeRecordedToolCall(
     turnId: string,
     stepId: string,
     call: ToolCallModelChunk,
     signal: AbortSignal,
   ): Promise<boolean> {
-    await this.#emit(
-      {
-        type: 'tool.call',
-        stepId,
-        callId: call.callId,
-        tool: call.tool,
-        args: structuredClone(call.args),
-      },
-      signal,
-    );
-
     const tool = this.tools.get(call.tool);
     if (tool === undefined) {
       await this.#emitToolFailure(call.callId, stepId, 1, new Error('Tool is not registered.'));
@@ -589,7 +625,7 @@ export class AgentLoop {
       },
       this.#strategyContext(signal, turnId, stepId),
     );
-    await this.#emit(
+    const persisted = await this.#emit(
       {
         type: 'permission.resolved',
         reqId,
@@ -600,7 +636,13 @@ export class AgentLoop {
       },
       signal,
     );
-    return decision;
+    if (persisted.type !== 'permission.resolved') {
+      throw new AgentLoopInvariantError('Expected permission.resolved after permission policy.');
+    }
+    return {
+      decision: persisted.decision,
+      reason: persisted.reason ?? decision.reason,
+    };
   }
 
   async #executePersistedToolCall(
@@ -775,6 +817,21 @@ export class AgentLoop {
         event.outcome !== 'succeeded',
     );
     const completedToolWork = stepResults.some((event) => event.type === 'tool.call');
+    const recoveredUsage = [...stepResults]
+      .reverse()
+      .find(
+        (event): event is Extract<AgentEvent, { readonly type: 'tool.call' }> =>
+          event.type === 'tool.call' && event.modelUsage !== undefined,
+      )?.modelUsage;
+    this.#activeUsage = recoveredUsage ?? emptyUsage;
+    if (completedToolWork) {
+      await this.#runMemoryPipeline(
+        'write',
+        refreshed.activeStep.turnId,
+        refreshed.activeStep.stepId,
+        signal,
+      );
+    }
     await this.#emit(
       {
         type: 'step.finished',
@@ -783,10 +840,14 @@ export class AgentLoop {
         // A model-only step has no durable finish marker, so an unfinished one cannot be
         // proven successful during replay. Tool work is complete only after all calls close.
         outcome: failed || !completedToolWork ? 'failed' : 'succeeded',
-        usage: emptyUsage,
+        usage: this.#activeUsage,
       },
       signal,
     );
+    if (completedToolWork) {
+      await this.#maybeCompact(refreshed.activeStep.turnId, refreshed.activeStep.stepId, signal);
+      await this.#maybeCheckpoint(refreshed.activeStep.turnId, refreshed.activeStep.stepId, signal);
+    }
   }
 
   async #recoverPendingToolCall(
@@ -1072,6 +1133,7 @@ export class AgentLoop {
         ...this.#middlewareContext(signal, turnId, event.stepId),
         event,
         persisted: true,
+        persistedEvent: event,
       };
       await this.#costAccounting(context, async () => {});
     }
@@ -1087,22 +1149,19 @@ export class AgentLoop {
       ts: this.#now(),
     } as AgentEvent;
     const turnId = eventTurnId(event) ?? this.#state.activeTurn?.turnId ?? '';
+    let persistedSnapshot: AgentEvent | undefined;
     const context: EventMiddlewareContext = {
       ...this.#middlewareContext(signal, turnId, eventStepId(event)),
       event,
       persisted: false,
+      get persistedEvent() {
+        return persistedSnapshot;
+      },
     };
     let persistedEvent: AgentEvent | undefined;
 
     await this.middleware.run('event', context, async () => {
-      const candidate = {
-        ...structuredClone(context.event),
-        type: event.type,
-        seq: event.seq,
-        tenantId: event.tenantId,
-        sessionId: event.sessionId,
-        ts: event.ts,
-      } as AgentEvent;
+      const candidate = deepFreeze(reconcileEventForPersistence(event, context.event));
       const prospectiveState = applyEventToSessionState(this.#state, candidate);
       const projection = await projectMessageHistory(this.eventLog.read(0));
       applyEventToMessageProjection(projection, candidate);
@@ -1111,9 +1170,10 @@ export class AgentLoop {
       persistedEvent = candidate;
       context.event = candidate;
       context.persisted = true;
+      persistedSnapshot = candidate;
       this.#state = prospectiveState;
     });
-    if (persistedEvent === undefined || !context.persisted) {
+    if (persistedEvent === undefined || context.persistedEvent === undefined) {
       throw new AgentLoopInvariantError(`Event middleware suppressed required ${event.type}.`);
     }
     return persistedEvent;
@@ -1266,6 +1326,63 @@ function eventStepId(event: AgentEvent): string | undefined {
     default:
       return undefined;
   }
+}
+
+function reconcileEventForPersistence(authoritative: AgentEvent, proposed: AgentEvent): AgentEvent {
+  const candidate = structuredClone(authoritative) as AgentEvent;
+  if (proposed.type !== authoritative.type) {
+    return candidate;
+  }
+
+  switch (authoritative.type) {
+    case 'turn.started':
+      return copyEventFields(candidate, proposed, ['input']);
+    case 'step.started':
+      // injectedInputs and correlation fields are the atomic Steering commit boundary.
+      return candidate;
+    case 'step.finished':
+      return copyEventFields(candidate, proposed, ['outcome', 'usage']);
+    case 'model.request':
+      // The event must describe the request that ModelPort actually received.
+      return candidate;
+    case 'model.delta':
+      return copyEventFields(candidate, proposed, ['delta']);
+    case 'tool.call':
+      // Tool intent is fixed before side effects; argument rewriting belongs in tool middleware.
+      return candidate;
+    case 'tool.result':
+      // Result redaction is allowed, but execution outcome and correlation remain authoritative.
+      return copyEventFields(candidate, proposed, ['result']);
+    case 'permission.requested':
+      return copyEventFields(candidate, proposed, ['reason']);
+    case 'permission.resolved':
+      return copyEventFields(candidate, proposed, ['decision', 'reason']);
+    case 'compaction.applied':
+      return copyEventFields(candidate, proposed, ['summary', 'dropped']);
+    case 'checkpoint.created':
+      return copyEventFields(candidate, proposed, ['snapshotRef']);
+    case 'turn.finished':
+      return copyEventFields(candidate, proposed, ['stopReason', 'usage']);
+  }
+}
+
+function copyEventFields(
+  target: AgentEvent,
+  source: AgentEvent,
+  fields: readonly string[],
+): AgentEvent {
+  const mutable = target as unknown as Record<string, unknown>;
+  const proposed = source as unknown as Record<string, unknown>;
+  for (const field of fields) {
+    if (!Object.prototype.hasOwnProperty.call(proposed, field)) {
+      continue;
+    }
+    const value = proposed[field];
+    if (value !== undefined) {
+      mutable[field] = structuredClone(value);
+    }
+  }
+  return target;
 }
 
 function modelRequestToJson(request: ModelRequest): JsonObject {

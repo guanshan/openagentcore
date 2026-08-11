@@ -196,6 +196,7 @@ describe('cost accounting middleware', () => {
       stepFinished(1, { inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
     );
     rejectedContext.persisted = false;
+    setPersistedEvent(rejectedContext, undefined);
     await expect(
       accounting(rejectedContext, async () => {
         throw rejected;
@@ -215,11 +216,18 @@ describe('cost accounting middleware', () => {
       stepFinished(1, { inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
     );
     persisted.persisted = false;
+    setPersistedEvent(persisted, undefined);
     const downstream = new Error('after append');
 
     await expect(
       accounting(persisted, async () => {
         persisted.persisted = true;
+        setPersistedEvent(persisted, persisted.event);
+        persisted.event = stepFinished(1, {
+          inputTokens: 999,
+          outputTokens: 999,
+          totalTokens: 1_998,
+        });
         throw downstream;
       }),
     ).rejects.toBe(downstream);
@@ -237,6 +245,7 @@ describe('cost accounting middleware', () => {
       stepFinished(1, { inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
     );
     skipped.persisted = false;
+    setPersistedEvent(skipped, undefined);
     await accounting(skipped, async () => {});
 
     const finished = createEventContext(turnFinished(2));
@@ -274,7 +283,11 @@ describe('cost accounting middleware', () => {
 });
 
 function createEventContext(event: AgentEvent): EventMiddlewareContext {
-  return { ...baseContext, event, persisted: true };
+  return { ...baseContext, event, persisted: true, persistedEvent: event };
+}
+
+function setPersistedEvent(context: EventMiddlewareContext, event: AgentEvent | undefined): void {
+  (context as { persistedEvent: AgentEvent | undefined }).persistedEvent = event;
 }
 
 function eventBase(seq: number) {

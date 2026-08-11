@@ -6,6 +6,8 @@ import { assertSchemaValidEvent } from '../events/schema.test-support.js';
 import type { AgentEvent, JsonObject, JsonValue } from '../events/types.js';
 import { ScriptedModelPort, type ModelChunk } from '../ports/model.js';
 import {
+  type CheckpointDecision,
+  type CheckpointStrategyInput,
   createDefaultStrategyRegistry,
   type StopDecision,
   type StopStrategyInput,
@@ -68,6 +70,30 @@ describe('AgentLoop', () => {
     expect(events.every((event) => event.tenantId === 'tenant-test')).toBe(true);
     expect(events.every((event) => event.sessionId === 'session-default')).toBe(true);
     expect(events.every((event) => event.ts === timestamp)).toBe(true);
+  });
+
+  it('accounts from the persisted snapshot when middleware edits context after append', async () => {
+    const model = new ScriptedModelPort([
+      [
+        { kind: 'text', text: 'Persisted usage.' },
+        { kind: 'usage', usage: usage(2, 1, 0.01) },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
+    const { loop } = createLoop(model);
+    loop.use('event', async (context, next) => {
+      await next();
+      if (context.event.type === 'step.finished') {
+        context.event = {
+          ...context.event,
+          usage: usage(999, 999, 99),
+        };
+      }
+    });
+
+    const result = await loop.runTurn({ content: 'Keep persisted accounting.' });
+
+    expect(result.usage).toEqual(usage(2, 1, 0.01));
   });
 
   it('closes a persisted turn when event middleware throws after append', async () => {
@@ -168,7 +194,9 @@ describe('AgentLoop', () => {
     const model = new ScriptedModelPort(
       [
         [
-          { kind: 'text', text: prompted },
+          { kind: 'text', text: prompted.slice(0, 7) },
+          { kind: 'text', text: prompted.slice(7, 23) },
+          { kind: 'text', text: prompted.slice(23) },
           { kind: 'finish', reason: 'tool-calls' },
         ],
         [
@@ -290,6 +318,29 @@ describe('AgentLoop', () => {
       name: 'external-one-step',
       metrics: { evaluations: 2 },
     });
+  });
+
+  it('runs an externally registered checkpoint strategy after a completed step', async () => {
+    const registry = createDefaultStrategyRegistry().register(new EveryStepCheckpointStrategy());
+    const model = new ScriptedModelPort([
+      [
+        { kind: 'text', text: 'Checkpointed.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
+    const { loop } = createLoop(model, {
+      strategyRegistry: registry,
+      strategies: { checkpoint: { use: 'external-every-step' } },
+    });
+
+    const result = await loop.runTurn({ content: 'Create a checkpoint marker.' });
+
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'checkpoint.created',
+        snapshotRef: 'snapshot-step-1',
+      }),
+    );
   });
 
   it('records a failing tool result, closes the turn, and rethrows the tool error', async () => {
@@ -415,6 +466,39 @@ describe('AgentLoop', () => {
     await expectClosedAndSchemaValid(log, 'failed');
   });
 
+  it('uses the persisted permission decision when event middleware tightens policy', async () => {
+    const tool = new EchoTool();
+    const model = new ScriptedModelPort([
+      [toolCall('call-event-denied', 'echo', null), { kind: 'finish', reason: 'tool-calls' }],
+    ]);
+    const { loop, log } = createLoop(model, {
+      tools: new ToolRegistry().register(tool),
+    });
+    loop.use('event', async (context, next) => {
+      if (context.event.type === 'permission.resolved') {
+        context.event = {
+          ...context.event,
+          decision: 'deny',
+          reason: 'event-policy',
+        };
+      }
+      await next();
+    });
+
+    const result = await loop.runTurn({ content: 'Apply event policy.' });
+
+    expect(result.stopReason).toBe('failed');
+    expect(tool.requests).toHaveLength(0);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'permission.resolved',
+        decision: 'deny',
+        reason: 'event-policy',
+      }),
+    );
+    await expectClosedAndSchemaValid(log, 'failed');
+  });
+
   it('stops at max-steps after a tool step', async () => {
     const model = new ScriptedModelPort([
       [toolCall('call-limit', 'echo', null), { kind: 'finish', reason: 'tool-calls' }],
@@ -451,13 +535,16 @@ describe('AgentLoop', () => {
     await expectClosedAndSchemaValid(log, 'aborted');
   });
 
-  it('recovers an unknown tool result with the same callId and matches uninterrupted history', async () => {
+  it('recovers a multi-tool batch with stable callIds, usage, and uninterrupted history', async () => {
     const firstResponse: readonly ModelChunk[] = [
       toolCall('call-recover', 'work', { value: 42 }),
+      toolCall('call-after', 'work', { value: 43 }),
+      { kind: 'usage', usage: usage(5, 1, 0.02) },
       { kind: 'finish', reason: 'tool-calls' },
     ];
     const finalResponse: readonly ModelChunk[] = [
       { kind: 'text', text: 'Recovered.' },
+      { kind: 'usage', usage: usage(3, 2, 0.03) },
       { kind: 'finish', reason: 'stop' },
     ];
 
@@ -481,7 +568,7 @@ describe('AgentLoop', () => {
       AgentLoopCrashError,
     );
     const interrupted = await projectSessionState(log.read(0));
-    expect(interrupted.pendingToolCalls).toHaveLength(1);
+    expect(interrupted.pendingToolCalls).toHaveLength(2);
 
     const resumed = new AgentLoop({
       eventLog: log,
@@ -493,11 +580,24 @@ describe('AgentLoop', () => {
     const actual = await resumed.resumeTurn();
 
     expect(actual.history).toEqual(expected.history);
-    expect(crashingTool.requests.map((request) => request.attempt)).toEqual([1, 2]);
+    expect(actual.usage).toEqual(expected.usage);
+    expect(
+      crashingTool.requests.map((request) => ({
+        callId: request.callId,
+        attempt: request.attempt,
+      })),
+    ).toEqual([
+      { callId: 'call-recover', attempt: 1 },
+      { callId: 'call-recover', attempt: 2 },
+      { callId: 'call-after', attempt: 1 },
+    ]);
     expect(
       actual.events.filter(
         (event) => event.type === 'tool.call' && event.callId === 'call-recover',
       ),
+    ).toHaveLength(1);
+    expect(
+      actual.events.filter((event) => event.type === 'tool.call' && event.callId === 'call-after'),
     ).toHaveLength(1);
     await expectClosedAndSchemaValid(log, 'done');
   });
@@ -630,6 +730,28 @@ class OneStepStopStrategy implements Strategy<StopStrategyInput, StopDecision, u
 
   metrics() {
     return { evaluations: this.#evaluations };
+  }
+}
+
+class EveryStepCheckpointStrategy implements Strategy<
+  CheckpointStrategyInput,
+  CheckpointDecision,
+  undefined
+> {
+  readonly kind = 'checkpoint';
+  readonly name = 'external-every-step';
+
+  async init(config: undefined, ports: KernelPorts): Promise<void> {
+    void config;
+    void ports;
+  }
+
+  async apply(
+    input: CheckpointStrategyInput,
+    context: StrategyContext,
+  ): Promise<CheckpointDecision> {
+    context.signal.throwIfAborted();
+    return { checkpoint: true, snapshotRef: `snapshot-step-${input.completedSteps}` };
   }
 }
 

@@ -83,6 +83,8 @@ export interface EventMiddlewareContext extends MiddlewareBaseContext {
   event: AgentEvent;
   /** Set by the append terminal only after the event is durably accepted. */
   persisted: boolean;
+  /** Immutable snapshot accepted by EventLog; post-append middleware edits cannot change it. */
+  readonly persistedEvent: AgentEvent | undefined;
 }
 
 export interface MiddlewareContextMap {
@@ -168,8 +170,8 @@ export function createCostAccountingMiddleware(): Middleware<EventMiddlewareCont
       try {
         await next();
       } finally {
-        if (context.persisted && context.event.type === 'step.finished') {
-          usageByTurn.set(key, addUsage(existing, context.event.usage));
+        if (context.persistedEvent?.type === 'step.finished') {
+          usageByTurn.set(key, addUsage(existing, context.persistedEvent.usage));
         }
       }
       return;
@@ -181,7 +183,7 @@ export function createCostAccountingMiddleware(): Middleware<EventMiddlewareCont
       try {
         await next();
       } finally {
-        if (context.persisted) {
+        if (context.persistedEvent !== undefined) {
           usageByTurn.delete(key);
         }
       }
