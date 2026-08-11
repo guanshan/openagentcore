@@ -1,0 +1,36 @@
+{
+  "description": "Schema 可确认唯一终态，但终态后的分块必须由回放不变量拒绝",
+  "expected": "replay-rejected",
+  "recording": {
+    "specVersion": "0.4.0",
+    "kind": "model-port-recording",
+    "capabilities": {
+      "streaming": true,
+      "toolUse": "none",
+      "promptCaching": false,
+      "structuredOutput": false,
+      "maxContext": 4096,
+      "vision": false
+    },
+    "redaction": {
+      "replacement": "[REDACTED]",
+      "sensitiveKeys": [],
+      "pointers": []
+    },
+    "operations": [
+      {
+        "seq": 0,
+        "operation": "stream",
+        "request": {
+          "messages": [{ "role": "user", "content": "hello" }],
+          "tools": [],
+          "toolUse": "none"
+        },
+        "frames": [
+          { "kind": "completed", "atMs": 1 },
+          { "kind": "chunk", "atMs": 2, "chunk": { "kind": "text", "text": "late" } }
+        ]
+      }
+    ]
+  }
+}

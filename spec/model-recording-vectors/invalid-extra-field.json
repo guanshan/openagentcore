@@ -1,0 +1,23 @@
+{
+  "description": "顶层未声明字段必须由 Schema 拒绝",
+  "expected": "schema-rejected",
+  "recording": {
+    "specVersion": "0.4.0",
+    "kind": "model-port-recording",
+    "capabilities": {
+      "streaming": true,
+      "toolUse": "none",
+      "promptCaching": false,
+      "structuredOutput": false,
+      "maxContext": 4096,
+      "vision": false
+    },
+    "redaction": {
+      "replacement": "[REDACTED]",
+      "sensitiveKeys": [],
+      "pointers": []
+    },
+    "operations": [],
+    "provider": "must-not-leak-into-the-portable-format"
+  }
+}

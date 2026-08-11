@@ -1,0 +1,358 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentcore.dev/spec/schemas/model-recording.v0.json",
+  "title": "OpenAgentCore ModelPort Recording v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["specVersion", "kind", "capabilities", "redaction", "operations"],
+  "properties": {
+    "specVersion": { "const": "0.4.0" },
+    "kind": { "const": "model-port-recording" },
+    "capabilities": { "$ref": "#/$defs/modelCapabilities" },
+    "redaction": { "$ref": "#/$defs/redaction" },
+    "operations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/operation" }
+    }
+  },
+  "$defs": {
+    "jsonValue": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/jsonValue" }
+        },
+        { "$ref": "#/$defs/jsonObject" }
+      ]
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "modelCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "streaming",
+        "toolUse",
+        "promptCaching",
+        "structuredOutput",
+        "maxContext",
+        "vision"
+      ],
+      "properties": {
+        "streaming": { "type": "boolean" },
+        "toolUse": { "enum": ["native", "prompted", "none"] },
+        "promptCaching": { "type": "boolean" },
+        "structuredOutput": { "type": "boolean" },
+        "maxContext": { "type": "integer", "minimum": 1 },
+        "vision": { "type": "boolean" }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replacement", "sensitiveKeys", "pointers"],
+      "properties": {
+        "replacement": { "const": "[REDACTED]" },
+        "sensitiveKeys": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "pointers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?:/(?:[^~/]|~[01])*)+$"
+          }
+        }
+      }
+    },
+    "messageToolCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["callId", "tool", "args"],
+      "properties": {
+        "callId": { "type": "string" },
+        "tool": { "type": "string" },
+        "args": { "$ref": "#/$defs/jsonValue" }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "enum": ["system", "user", "assistant", "tool"] },
+        "content": { "type": "string" },
+        "name": { "type": "string" },
+        "toolCallId": { "type": "string" },
+        "toolCalls": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/messageToolCall" }
+        }
+      }
+    },
+    "toolDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "inputSchema"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "inputSchema": { "$ref": "#/$defs/jsonObject" }
+      }
+    },
+    "modelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messages", "tools", "toolUse"],
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/message" }
+        },
+        "tools": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/toolDefinition" }
+        },
+        "toolUse": { "enum": ["native", "prompted", "none"] },
+        "metadata": { "$ref": "#/$defs/jsonObject" }
+      }
+    },
+    "modelCost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amount", "currency"],
+      "properties": {
+        "amount": { "type": "number", "minimum": 0 },
+        "currency": { "type": "string", "minLength": 1 }
+      }
+    },
+    "modelUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputTokens", "outputTokens", "totalTokens"],
+      "properties": {
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 },
+        "totalTokens": { "type": "integer", "minimum": 0 },
+        "cost": { "$ref": "#/$defs/modelCost" }
+      }
+    },
+    "textChunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "text"],
+      "properties": {
+        "kind": { "const": "text" },
+        "text": { "type": "string" }
+      }
+    },
+    "toolCallChunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "callId", "tool", "args"],
+      "properties": {
+        "kind": { "const": "tool-call" },
+        "callId": { "type": "string" },
+        "tool": { "type": "string" },
+        "args": { "$ref": "#/$defs/jsonValue" }
+      }
+    },
+    "usageChunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "usage"],
+      "properties": {
+        "kind": { "const": "usage" },
+        "usage": { "$ref": "#/$defs/modelUsage" }
+      }
+    },
+    "finishChunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason"],
+      "properties": {
+        "kind": { "const": "finish" },
+        "reason": {
+          "enum": ["stop", "tool-calls", "length", "content-filter", "error"]
+        }
+      }
+    },
+    "modelChunk": {
+      "oneOf": [
+        { "$ref": "#/$defs/textChunk" },
+        { "$ref": "#/$defs/toolCallChunk" },
+        { "$ref": "#/$defs/usageChunk" },
+        { "$ref": "#/$defs/finishChunk" }
+      ]
+    },
+    "genericError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "name", "message"],
+      "properties": {
+        "type": { "const": "generic" },
+        "name": { "type": "string", "minLength": 1 },
+        "message": { "type": "string" }
+      }
+    },
+    "modelPortError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "name", "message", "kind", "retryable"],
+      "properties": {
+        "type": { "const": "model-port" },
+        "name": { "const": "ModelPortError" },
+        "message": { "type": "string" },
+        "kind": {
+          "enum": [
+            "authentication",
+            "rate-limit",
+            "timeout",
+            "service",
+            "content-filter",
+            "invalid-request",
+            "network",
+            "protocol"
+          ]
+        },
+        "retryable": { "type": "boolean" },
+        "status": { "type": "integer", "minimum": 0 },
+        "retryAfterMs": { "type": "number", "minimum": 0 },
+        "providerCode": { "type": "string" },
+        "details": { "$ref": "#/$defs/jsonObject" }
+      }
+    },
+    "recordedError": {
+      "oneOf": [{ "$ref": "#/$defs/genericError" }, { "$ref": "#/$defs/modelPortError" }]
+    },
+    "chunkFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "atMs", "chunk"],
+      "properties": {
+        "kind": { "const": "chunk" },
+        "atMs": { "type": "number", "minimum": 0 },
+        "chunk": { "$ref": "#/$defs/modelChunk" }
+      }
+    },
+    "completedFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "atMs"],
+      "properties": {
+        "kind": { "const": "completed" },
+        "atMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "errorFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "atMs", "error"],
+      "properties": {
+        "kind": { "const": "error" },
+        "atMs": { "type": "number", "minimum": 0 },
+        "error": { "$ref": "#/$defs/recordedError" }
+      }
+    },
+    "cancelledFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "atMs"],
+      "properties": {
+        "kind": { "const": "cancelled" },
+        "atMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "terminalFrame": {
+      "oneOf": [
+        { "$ref": "#/$defs/completedFrame" },
+        { "$ref": "#/$defs/errorFrame" },
+        { "$ref": "#/$defs/cancelledFrame" }
+      ]
+    },
+    "streamFrame": {
+      "oneOf": [
+        { "$ref": "#/$defs/chunkFrame" },
+        { "$ref": "#/$defs/completedFrame" },
+        { "$ref": "#/$defs/errorFrame" },
+        { "$ref": "#/$defs/cancelledFrame" }
+      ]
+    },
+    "returnedOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "atMs", "tokens"],
+      "properties": {
+        "kind": { "const": "returned" },
+        "atMs": { "type": "number", "minimum": 0 },
+        "tokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "errorOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "atMs", "error"],
+      "properties": {
+        "kind": { "const": "error" },
+        "atMs": { "type": "number", "minimum": 0 },
+        "error": { "$ref": "#/$defs/recordedError" }
+      }
+    },
+    "cancelledOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "atMs"],
+      "properties": {
+        "kind": { "const": "cancelled" },
+        "atMs": { "type": "number", "minimum": 0 }
+      }
+    },
+    "countTokensOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "operation", "request", "outcome"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 0 },
+        "operation": { "const": "countTokens" },
+        "request": { "$ref": "#/$defs/modelRequest" },
+        "outcome": {
+          "oneOf": [
+            { "$ref": "#/$defs/returnedOutcome" },
+            { "$ref": "#/$defs/errorOutcome" },
+            { "$ref": "#/$defs/cancelledOutcome" }
+          ]
+        }
+      }
+    },
+    "streamOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "operation", "request", "frames"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 0 },
+        "operation": { "const": "stream" },
+        "request": { "$ref": "#/$defs/modelRequest" },
+        "frames": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/streamFrame" },
+          "contains": { "$ref": "#/$defs/terminalFrame" },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      }
+    },
+    "operation": {
+      "oneOf": [{ "$ref": "#/$defs/countTokensOperation" }, { "$ref": "#/$defs/streamOperation" }]
+    }
+  }
+}
