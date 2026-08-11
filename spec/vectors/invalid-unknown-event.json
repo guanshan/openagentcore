@@ -1,0 +1,18 @@
+{
+  "description": "Unknown event variants are rejected by AgentEvent v0.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-unknown"
+  },
+  "expected": "schema-rejected",
+  "events": [
+    {
+      "type": "turn.paused",
+      "seq": 1,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-unknown",
+      "ts": "2026-08-11T03:20:00Z",
+      "turnId": "turn-1"
+    }
+  ]
+}

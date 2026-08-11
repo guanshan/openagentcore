@@ -1,5 +1,31 @@
 {
   "name": "openagentcore-monorepo",
   "private": true,
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "changeset": "changeset",
+    "example:replay": "pnpm --filter @openagentcore/replay-demo replay",
+    "format:check": "prettier --check .",
+    "lint": "eslint . && pnpm format:check && pnpm lint:boundaries && pnpm lint:structure",
+    "lint:boundaries": "depcruise --config dependency-cruiser.config.mjs packages/kernel examples providers",
+    "lint:structure": "node structure-lint.mjs",
+    "test": "vitest run",
+    "typecheck": "pnpm -r --if-present run typecheck"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.1",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.2.0",
+    "dependency-cruiser": "^18.2.0",
+    "eslint": "^10.8.1",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
+  }
 }

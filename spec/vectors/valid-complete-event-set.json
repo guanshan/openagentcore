@@ -1,0 +1,100 @@
+{
+  "description": "A single-session stream containing every AgentEvent v0 variant is valid.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-complete"
+  },
+  "expected": "accepted",
+  "events": [
+    {
+      "type": "turn.started",
+      "seq": 1,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:00Z",
+      "turnId": "turn-1",
+      "input": { "content": "Inspect the repository." }
+    },
+    {
+      "type": "model.request",
+      "seq": 2,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:01Z",
+      "stepId": "step-1",
+      "assembled": { "messageCount": 1 }
+    },
+    {
+      "type": "model.delta",
+      "seq": 3,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:02Z",
+      "stepId": "step-1",
+      "delta": { "kind": "text", "text": "I will inspect it." }
+    },
+    {
+      "type": "tool.call",
+      "seq": 4,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:03Z",
+      "callId": "call-1",
+      "tool": "read_file",
+      "args": { "path": "README.md" }
+    },
+    {
+      "type": "tool.result",
+      "seq": 5,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:04Z",
+      "callId": "call-1",
+      "result": { "content": "# OpenAgentCore", "isError": false }
+    },
+    {
+      "type": "permission.requested",
+      "seq": 6,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:05Z",
+      "reqId": "permission-1",
+      "action": { "kind": "write", "path": "README.md" }
+    },
+    {
+      "type": "permission.resolved",
+      "seq": 7,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:06Z",
+      "reqId": "permission-1",
+      "decision": "allow"
+    },
+    {
+      "type": "compaction.applied",
+      "seq": 8,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:07Z",
+      "summary": "The repository inspection was requested and acknowledged.",
+      "dropped": { "fromSeq": 1, "toSeq": 3 }
+    },
+    {
+      "type": "checkpoint.created",
+      "seq": 9,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:08Z",
+      "snapshotRef": "snapshot-1"
+    },
+    {
+      "type": "turn.finished",
+      "seq": 10,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-complete",
+      "ts": "2026-08-11T01:00:09Z",
+      "turnId": "turn-1",
+      "stopReason": "completed"
+    }
+  ]
+}

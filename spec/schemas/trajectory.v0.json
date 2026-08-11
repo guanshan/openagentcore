@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openagentcore.dev/spec/schemas/trajectory.v0.json",
+  "title": "OpenAgentCore Trajectory v0",
+  "type": "object",
+  "required": ["metadata", "events"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["specVersion", "tenantId", "sessionId", "agentDefinitionSummary"],
+      "properties": {
+        "specVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"
+        },
+        "tenantId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agentDefinitionSummary": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "agent-event.v0.json#/$defs/jsonValue"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "agent-event.v0.json"
+      }
+    }
+  },
+  "additionalProperties": false
+}

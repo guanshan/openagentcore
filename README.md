@@ -13,14 +13,14 @@
 
 ## 分层与目录
 
-| 目录 | 层 | 内容 |
-| --- | --- | --- |
-| [spec/](spec/) | L0 | 语言无关协议：事件流、工具 Schema、Trajectory、UI 线协议 |
-| [packages/kernel/](packages/kernel/) | L1 | 事件溯源 Agent Loop、Strategy/Middleware/Prompt 三机制、Port 接口 |
-| [packages/coding/](packages/coding/) | — | Coding Agent 能力包（代码理解、Git 工作流、验证闭环） |
-| [packages/runtime/](packages/runtime/) | L3 | HTTP/WS、A2A、MCP server、任务队列、触发器、多租户 |
-| [packages/ui/](packages/ui/) · [packages/cli/](packages/cli/) | L4 | React UI Kit 与 `oac` 命令行 |
-| [providers/](providers/) | L2 | 各厂商适配器，本仓唯一的生长轴 |
+| 目录                                                          | 层  | 内容                                                              |
+| ------------------------------------------------------------- | --- | ----------------------------------------------------------------- |
+| [spec/](spec/)                                                | L0  | 语言无关协议：事件流、工具 Schema、Trajectory、UI 线协议          |
+| [packages/kernel/](packages/kernel/)                          | L1  | 事件溯源 Agent Loop、Strategy/Middleware/Prompt 三机制、Port 接口 |
+| [packages/coding/](packages/coding/)                          | —   | Coding Agent 能力包（代码理解、Git 工作流、验证闭环）             |
+| [packages/runtime/](packages/runtime/)                        | L3  | HTTP/WS、A2A、MCP server、任务队列、触发器、多租户                |
+| [packages/ui/](packages/ui/) · [packages/cli/](packages/cli/) | L4  | React UI Kit 与 `oac` 命令行                                      |
+| [providers/](providers/)                                      | L2  | 各厂商适配器，本仓唯一的生长轴                                    |
 
 Python SDK 位于独立仓库 [openagentcore-py](https://github.com/guanshan/openagentcore-py)，镜像本仓目录结构、共享 spec。
 

@@ -1,0 +1,55 @@
+{
+  "description": "A compaction whose content coverage crosses a retained message is rejected during replay.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-noncontiguous-coverage"
+  },
+  "expected": "replay-rejected",
+  "events": [
+    {
+      "type": "model.delta",
+      "seq": 0,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-noncontiguous-coverage",
+      "ts": "2026-08-11T05:00:00Z",
+      "stepId": "step-1",
+      "delta": { "kind": "text", "text": "A" }
+    },
+    {
+      "type": "model.delta",
+      "seq": 1,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-noncontiguous-coverage",
+      "ts": "2026-08-11T05:00:01Z",
+      "stepId": "step-1",
+      "delta": { "kind": "text", "text": "B" }
+    },
+    {
+      "type": "compaction.applied",
+      "seq": 2,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-noncontiguous-coverage",
+      "ts": "2026-08-11T05:00:02Z",
+      "summary": "A was compacted.",
+      "dropped": { "fromSeq": 0, "toSeq": 0 }
+    },
+    {
+      "type": "model.delta",
+      "seq": 3,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-noncontiguous-coverage",
+      "ts": "2026-08-11T05:00:03Z",
+      "stepId": "step-1",
+      "delta": { "kind": "text", "text": "C" }
+    },
+    {
+      "type": "compaction.applied",
+      "seq": 4,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-noncontiguous-coverage",
+      "ts": "2026-08-11T05:00:04Z",
+      "summary": "Invalid non-contiguous summary.",
+      "dropped": { "fromSeq": 2, "toSeq": 3 }
+    }
+  ]
+}
