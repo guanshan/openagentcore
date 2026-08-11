@@ -24,12 +24,12 @@
 
 ### 1.2 差异化主张
 
-| 主张 | 说明 |
-| --- | --- |
-| 国内云一等公民 | 腾讯云 / 阿里云 / 火山引擎的 Sandbox、网关、可观测、Vault 开箱即用，并有 conformance 认证 |
-| 事件溯源内核 | 崩溃恢复、时间回溯、确定性回放、审计，是同一个存储模型的四个免费副产品 |
-| 生产级 Coding Agent 内核 | 代码索引、Git 工作流、验证闭环、权限审批，不是 demo 玩具 |
-| 全量可调 | Strategy 注册表 + Middleware 链 + Prompt 注册表，三个机制覆盖所有定制点 |
+| 主张                     | 说明                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| 国内云一等公民           | 腾讯云 / 阿里云 / 火山引擎的 Sandbox、网关、可观测、Vault 开箱即用，并有 conformance 认证 |
+| 事件溯源内核             | 崩溃恢复、时间回溯、确定性回放、审计，是同一个存储模型的四个免费副产品                    |
+| 生产级 Coding Agent 内核 | 代码索引、Git 工作流、验证闭环、权限审批，不是 demo 玩具                                  |
+| 全量可调                 | Strategy 注册表 + Middleware 链 + Prompt 注册表，三个机制覆盖所有定制点                   |
 
 ---
 
@@ -68,7 +68,7 @@ Kernel 定义 **Port**（出站接口），Providers 提供 **Adapter**（实现
 ```ts
 // L1 Kernel 定义的 Port（节选）
 interface ModelPort {
-  readonly capabilities: ModelCapabilities;      // 能力协商，见 §7.1
+  readonly capabilities: ModelCapabilities; // 能力协商，见 §7.1
   stream(req: ModelRequest, signal: AbortSignal): AsyncIterable<ModelChunk>;
   countTokens(req: ModelRequest): Promise<number>;
 }
@@ -76,21 +76,24 @@ interface ModelPort {
 interface SandboxPort {
   readonly capabilities: SandboxCapabilities;
   exec(cmd: ExecRequest): Promise<ExecHandle>;
-  fs: SandboxFsPort;                             // 读写文件的子 Port
-  snapshot?(): Promise<SnapshotRef>;             // 可选能力
+  fs: SandboxFsPort; // 读写文件的子 Port
+  snapshot?(): Promise<SnapshotRef>; // 可选能力
   restore?(ref: SnapshotRef): Promise<void>;
 }
 
-interface StorePort {        // MySQL/Redis/SQLite/内存 统一收敛为 KV + 流两种原语
+interface StorePort {
+  // MySQL/Redis/SQLite/内存 统一收敛为 KV + 流两种原语
   kv: KvPort;
-  eventLog: EventLogPort;    // 事件溯源的持久化底座
+  eventLog: EventLogPort; // 事件溯源的持久化底座
 }
 
 interface VaultPort {
-  issue(scope: CredentialScope): Promise<ShortLivedCredential>;  // 只发短期凭证
+  issue(scope: CredentialScope): Promise<ShortLivedCredential>; // 只发短期凭证
 }
 
-interface TracePort { /* OpenTelemetry GenAI 语义，见 §12 */ }
+interface TracePort {
+  /* OpenTelemetry GenAI 语义，见 §12 */
+}
 ```
 
 **反腐层（Anti-Corruption Layer）**：每个云厂商 Adapter 内部消化该厂商 SDK 的概念与怪癖，不允许厂商类型泄漏进 Kernel API。厂商 SDK 升级只影响单个 provider 包。
@@ -99,13 +102,13 @@ interface TracePort { /* OpenTelemetry GenAI 语义，见 §12 */ }
 
 凡是已有广泛采用的开放协议的地方，直接采用并锁定最新版本；OAC 只定义标准未覆盖的扩展语义，放独立命名空间（`oac.*`），并优先推动上游化：
 
-| 协议 | 采用版本（2026-08 核查） | 用途 | 要点 |
-| --- | --- | --- | --- |
-| MCP | 2026-07-28 | 工具/资源接入（client）与对外暴露（server） | 无状态协议核心、Streamable HTTP + stdio 传输、正式扩展框架 |
-| A2A | v1.0（Linux Foundation 治理） | 跨 agent 委托与互操作 | 签名 AgentCard、多协议传输（JSON-RPC / gRPC / REST）、150+ 组织采用 |
-| AG-UI | 跟随主线 | agent ↔ 前端事件流（§11.1） | 单一 JSON 事件序列、双向共享状态、TS/Python 等多语言 SDK |
-| OpenTelemetry GenAI 语义约定 | 跟随 semconv 主线 | 可观测（§12） | 各家后端只是 exporter |
-| OpenAI-compatible API | 事实标准 | 模型接入的入口与出口（§7.4 / §11.2） | 一个 adapter 通吃网关生态 |
+| 协议                         | 采用版本（2026-08 核查）      | 用途                                        | 要点                                                                |
+| ---------------------------- | ----------------------------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| MCP                          | 2026-07-28                    | 工具/资源接入（client）与对外暴露（server） | 无状态协议核心、Streamable HTTP + stdio 传输、正式扩展框架          |
+| A2A                          | v1.0（Linux Foundation 治理） | 跨 agent 委托与互操作                       | 签名 AgentCard、多协议传输（JSON-RPC / gRPC / REST）、150+ 组织采用 |
+| AG-UI                        | 跟随主线                      | agent ↔ 前端事件流（§11.1）                 | 单一 JSON 事件序列、双向共享状态、TS/Python 等多语言 SDK            |
+| OpenTelemetry GenAI 语义约定 | 跟随 semconv 主线             | 可观测（§12）                               | 各家后端只是 exporter                                               |
+| OpenAI-compatible API        | 事实标准                      | 模型接入的入口与出口（§7.4 / §11.2）        | 一个 adapter 通吃网关生态                                           |
 
 协议版本锁定记录在 `spec/`（每协议一个锁定版本，升级走 ADR），conformance 向量随协议升级同步更新。
 
@@ -134,27 +137,27 @@ Tool / Skill / Connector / SubAgent ──注册于──> Registry
 
 ```ts
 type AgentEvent =
-  | { type: 'turn.started';        turnId: string; input: UserInput }
-  | { type: 'model.request';       stepId: string; assembled: ContextAssembly }
-  | { type: 'model.delta';         stepId: string; delta: TextOrToolDelta }
-  | { type: 'tool.call';           callId: string; tool: string; args: unknown }
-  | { type: 'tool.result';         callId: string; result: ToolResult }
-  | { type: 'permission.requested';reqId: string; action: ActionDescriptor }
-  | { type: 'permission.resolved'; reqId: string; decision: 'allow'|'deny' }
-  | { type: 'compaction.applied';  summary: string; dropped: EventRange }
-  | { type: 'checkpoint.created';  snapshotRef: string }
-  | { type: 'turn.finished';       turnId: string; stopReason: StopReason }
-  // ... 全集在 L0 spec 中定义
+  | { type: 'turn.started'; turnId: string; input: UserInput }
+  | { type: 'model.request'; stepId: string; assembled: ContextAssembly }
+  | { type: 'model.delta'; stepId: string; delta: TextOrToolDelta }
+  | { type: 'tool.call'; callId: string; tool: string; args: unknown }
+  | { type: 'tool.result'; callId: string; result: ToolResult }
+  | { type: 'permission.requested'; reqId: string; action: ActionDescriptor }
+  | { type: 'permission.resolved'; reqId: string; decision: 'allow' | 'deny' }
+  | { type: 'compaction.applied'; summary: string; dropped: EventRange }
+  | { type: 'checkpoint.created'; snapshotRef: string }
+  | { type: 'turn.finished'; turnId: string; stopReason: StopReason };
+// ... 全集在 L0 spec 中定义
 ```
 
 由此免费获得四种能力：
 
-| 能力 | 实现方式 |
-| --- | --- |
-| 崩溃恢复 | 重启后从 EventLog 重放（或从最近 Memento 快照 + 增量事件）恢复到崩溃前一刻 |
-| 时间回溯 | 截断到第 N 个事件、修改参数、从该点重新执行（分叉出新 Session） |
-| 确定性回放 | 录制模式下把 provider 响应也记为事件，回放时不打真实 API（见 §13.2） |
-| 审计 | 事件流本身就是完整审计日志，含每次权限决策与凭证使用 |
+| 能力       | 实现方式                                                                   |
+| ---------- | -------------------------------------------------------------------------- |
+| 崩溃恢复   | 重启后从 EventLog 重放（或从最近 Memento 快照 + 增量事件）恢复到崩溃前一刻 |
+| 时间回溯   | 截断到第 N 个事件、修改参数、从该点重新执行（分叉出新 Session）            |
+| 确定性回放 | 录制模式下把 provider 响应也记为事件，回放时不打真实 API（见 §13.2）       |
+| 审计       | 事件流本身就是完整审计日志，含每次权限决策与凭证使用                       |
 
 快照策略（Memento）：每 K 个事件或每次 compaction 后落一个状态快照，恢复 = 最近快照 + 尾部事件重放，避免长会话重放过慢。
 
@@ -198,12 +201,12 @@ abstract class AgentLoop {
 
 ```ts
 interface Strategy<TInput, TOutput, TConfig = unknown> {
-  readonly kind: StrategyKind;   // 'compaction' | 'memory' | 'routing' | 'retry'
-                                 // | 'tool-selection' | 'planning' | 'permission' ...
-  readonly name: string;         // 'sliding-window' | 'llm-summary' | 'hierarchical'...
+  readonly kind: StrategyKind; // 'compaction' | 'memory' | 'routing' | 'retry'
+  // | 'tool-selection' | 'planning' | 'permission' ...
+  readonly name: string; // 'sliding-window' | 'llm-summary' | 'hierarchical'...
   init(config: TConfig, ports: KernelPorts): Promise<void>;
   apply(input: TInput, ctx: StrategyContext): Promise<TOutput>;
-  metrics?(): StrategyMetrics;   // 供效果对比（压缩率、成本、eval 分）
+  metrics?(): StrategyMetrics; // 供效果对比（压缩率、成本、eval 分）
 }
 
 // 使用：配置切换，无需改代码
@@ -214,15 +217,15 @@ registry.register(new LlmSummaryCompaction());
 
 内置策略清单（V1）：
 
-| kind | 内置实现 |
-| --- | --- |
-| compaction | `none` / `sliding-window` / `llm-summary` / `hierarchical`（分层摘要） |
-| memory | `none` / `session-local` / `file-based`（Claude Code 式）/ `vector-rag` |
-| routing | `static` / `fallback-chain` / `task-tiered`（按难度分层用模型） |
-| retry | `exponential-backoff` / `circuit-breaker` |
-| tool-selection | `all` / `deferred-search`（工具多时按需加载 schema） |
-| planning | `direct` / `plan-then-execute`（Plan 模式，出计划待批准） |
-| permission | `allow-all` / `policy-file` / `interactive-ask` |
+| kind           | 内置实现                                                                |
+| -------------- | ----------------------------------------------------------------------- |
+| compaction     | `none` / `sliding-window` / `llm-summary` / `hierarchical`（分层摘要）  |
+| memory         | `none` / `session-local` / `file-based`（Claude Code 式）/ `vector-rag` |
+| routing        | `static` / `fallback-chain` / `task-tiered`（按难度分层用模型）         |
+| retry          | `exponential-backoff` / `circuit-breaker`                               |
+| tool-selection | `all` / `deferred-search`（工具多时按需加载 schema）                    |
+| planning       | `direct` / `plan-then-execute`（Plan 模式，出计划待批准）               |
+| permission     | `allow-all` / `policy-file` / `interactive-ask`                         |
 
 社区贡献一种新压缩算法 = 发一个 npm/pypi 包，在入口 `register()`，内核零改动（**开闭原则**的直接体现）。
 
@@ -234,11 +237,11 @@ registry.register(new LlmSummaryCompaction());
 type Middleware<Ctx> = (ctx: Ctx, next: () => Promise<void>) => Promise<void>;
 
 // 五条内置管道
-agent.use('model',      m);  // 模型调用前后：改 prompt、记账、缓存、注入
-agent.use('tool',       m);  // 工具调用前后：审计、改写参数、拦截、脱敏
-agent.use('context',    m);  // context 组装的最后一站：全量检查/改写 messages
-agent.use('memory',     m);  // 记忆读写前后
-agent.use('event',      m);  // 事件落盘前：过滤、富化、外发
+agent.use('model', m); // 模型调用前后：改 prompt、记账、缓存、注入
+agent.use('tool', m); // 工具调用前后：审计、改写参数、拦截、脱敏
+agent.use('context', m); // context 组装的最后一站：全量检查/改写 messages
+agent.use('memory', m); // 记忆读写前后
+agent.use('event', m); // 事件落盘前：过滤、富化、外发
 ```
 
 "上游修改调试各种 Prompt"的底层机制就是 `model` 管道的一个 middleware；"PII 脱敏"是 `tool` 管道的一个 middleware。**Hooks 机制是 Middleware 的配置化形态**（用户在配置文件里声明命令/脚本，Runtime 把它包装成 middleware 注入），二者不是两套系统。
@@ -291,13 +294,13 @@ Skill = 指令 + 资源 + 可选工具的可安装包（对齐 Claude Skills / a
 
 作为 Kernel 之上的官方能力包（不进 Kernel，保持内核领域无关）：
 
-| 能力 | 内容 |
-| --- | --- |
-| 代码理解 | tree-sitter 解析、repo map、LSP 客户端（定义/引用/诊断）、可选 embedding 索引 |
-| Git 工作流 | worktree 隔离（多 agent 并行不打架）、自动分支、commit/PR 生成、diff 审查 |
-| 验证闭环 | 测试/lint/构建的标准化 Verifier 接口，"改完自己验证"进入循环的 shouldStop 判据 |
-| 编辑原语 | 精确字符串替换、patch 应用、冲突检测（对齐 Claude Code / opencode 的编辑工具语义） |
-| 安全默认 | 危险命令识别、默认沙箱执行、路径白名单 |
+| 能力       | 内容                                                                               |
+| ---------- | ---------------------------------------------------------------------------------- |
+| 代码理解   | tree-sitter 解析、repo map、LSP 客户端（定义/引用/诊断）、可选 embedding 索引      |
+| Git 工作流 | worktree 隔离（多 agent 并行不打架）、自动分支、commit/PR 生成、diff 审查          |
+| 验证闭环   | 测试/lint/构建的标准化 Verifier 接口，"改完自己验证"进入循环的 shouldStop 判据     |
+| 编辑原语   | 精确字符串替换、patch 应用、冲突检测（对齐 Claude Code / opencode 的编辑工具语义） |
+| 安全默认   | 危险命令识别、默认沙箱执行、路径白名单                                             |
 
 ---
 
@@ -309,9 +312,12 @@ Skill = 指令 + 资源 + 可选工具的可安装包（对齐 Claude Skills / a
 
 ```ts
 interface ModelCapabilities {
-  streaming: boolean; toolUse: 'native' | 'prompted' | 'none';
-  promptCaching: boolean; structuredOutput: boolean;
-  maxContext: number; vision: boolean;
+  streaming: boolean;
+  toolUse: 'native' | 'prompted' | 'none';
+  promptCaching: boolean;
+  structuredOutput: boolean;
+  maxContext: number;
+  vision: boolean;
 }
 // 例：toolUse === 'prompted' 时，Kernel 自动切换到文本协议模拟工具调用
 ```
@@ -323,7 +329,7 @@ interface ModelCapabilities {
 
 ```ts
 const agent = AgentBuilder.fromPreset('tencent-full')
-  .model('volc-ark/deepseek-v3', { fallback: 'tencent/hunyuan' })  // 跨家混搭
+  .model('volc-ark/deepseek-v3', { fallback: 'tencent/hunyuan' }) // 跨家混搭
   .strategy('compaction', 'llm-summary', { targetRatio: 0.3 })
   .use('tool', auditMiddleware)
   .promptOverride('system.identity', myIdentityPrompt)
@@ -341,13 +347,13 @@ const agent = AgentBuilder.fromPreset('tencent-full')
 
 ### 7.4 V1 Adapter 矩阵（规划）
 
-| Port | 国内云 | 开源/通用 |
-| --- | --- | --- |
-| Model | 腾讯混元 / 阿里百炼 / 火山方舟 | OpenAI-compatible（一个 adapter 通吃 LiteLLM/OneAPI/Ollama/vLLM）、Anthropic |
-| Sandbox | 腾讯云 CodeBuddy Sandbox / 阿里云 / 火山 | 本地进程、Docker、E2B |
-| Store | TDSQL/云 Redis 等（走标准协议） | MySQL、Redis、PostgreSQL、SQLite、内存 |
-| Vault | 各云 KMS/凭据管理 | HashiCorp Vault、加密文件、环境变量 |
-| Trace | 腾讯云 APM / 阿里云 SLS / 火山 APMPlus | OTLP（Langfuse/Jaeger/任意 OTel 后端） |
+| Port    | 国内云                                   | 开源/通用                                                                    |
+| ------- | ---------------------------------------- | ---------------------------------------------------------------------------- |
+| Model   | 腾讯混元 / 阿里百炼 / 火山方舟           | OpenAI-compatible（一个 adapter 通吃 LiteLLM/OneAPI/Ollama/vLLM）、Anthropic |
+| Sandbox | 腾讯云 CodeBuddy Sandbox / 阿里云 / 火山 | 本地进程、Docker、E2B                                                        |
+| Store   | TDSQL/云 Redis 等（走标准协议）          | MySQL、Redis、PostgreSQL、SQLite、内存                                       |
+| Vault   | 各云 KMS/凭据管理                        | HashiCorp Vault、加密文件、环境变量                                          |
+| Trace   | 腾讯云 APM / 阿里云 SLS / 火山 APMPlus   | OTLP（Langfuse/Jaeger/任意 OTel 后端）                                       |
 
 ---
 
@@ -358,11 +364,11 @@ const agent = AgentBuilder.fromPreset('tencent-full')
 **纪律：Kernel 代码中不允许出现写死的 prompt 字符串**，一切经由 PromptRegistry：
 
 ```ts
-prompts.get('system.identity')       // 身份段
-prompts.get('system.tool-protocol')  // 工具使用规约
-prompts.get('compaction.summarize')  // 压缩摘要用的隐藏 prompt
-prompts.get('subagent.default')      // 子 agent 默认 prompt
-prompts.get('error.retry-hint')      // 出错重试提示语
+prompts.get('system.identity'); // 身份段
+prompts.get('system.tool-protocol'); // 工具使用规约
+prompts.get('compaction.summarize'); // 压缩摘要用的隐藏 prompt
+prompts.get('subagent.default'); // 子 agent 默认 prompt
+prompts.get('error.retry-hint'); // 出错重试提示语
 // prompts.list() 可枚举全集——没有黑盒
 ```
 
@@ -412,11 +418,11 @@ history → [memory 注入] → [skill 注入] → [compaction] → [slot 拼装
 
 直接采用 **AG-UI** 作为 agent ↔ 前端事件流的协议基座（单一 JSON 事件序列、双向共享状态、多语言 SDK 与活跃社区生态），不自造线协议。AG-UI 未覆盖的语义——审批请求/回填、diff 审查、成本计量——定义为 `oac.*` 扩展事件，独立命名空间，成熟后向上游提案。**同一协议服务三种形态**：
 
-| 形态 | 拓扑 |
-| --- | --- |
-| 后台 Server | agent 在 L3 Runtime，客户端经 WS/SSE 消费协议 |
-| 客户端产品 | agent 嵌入 Electron/App 进程，进程内事件直喂本地 UI |
-| 混合 | UI 在本地、agent 在云端，断线重连后凭事件序号续流 |
+| 形态        | 拓扑                                                |
+| ----------- | --------------------------------------------------- |
+| 后台 Server | agent 在 L3 Runtime，客户端经 WS/SSE 消费协议       |
+| 客户端产品  | agent 嵌入 Electron/App 进程，进程内事件直喂本地 UI |
+| 混合        | UI 在本地、agent 在云端，断线重连后凭事件序号续流   |
 
 ### 11.2 L3 Runtime 能力
 
@@ -477,29 +483,29 @@ history → [memory 注入] → [skill 注入] → [compaction] → [slot 拼装
 
 ## 15. 设计模式总览（速查表）
 
-| 模式 | 落点 | 解决什么 |
-| --- | --- | --- |
-| Ports & Adapters（六边形） | 全局骨架 | Kernel 与基建解耦，厂商可插拔 |
-| Anti-Corruption Layer | 每个 Provider 包 | 厂商 SDK 概念不泄漏进内核 |
-| Event Sourcing | Session 状态 | 崩溃恢复/回放/审计/回溯 四合一 |
-| Memento | Checkpoint 快照 | 长会话恢复提速 |
-| Template Method | AgentLoop | 循环骨架稳定，步骤可挂策略 |
-| State | Session 状态机 | 非法状态转移在类型层面被拒绝 |
-| Strategy + Registry | 压缩/记忆/路由/权限/… | 一切模式可换，配置切换，社区可贡献 |
-| Chain of Responsibility | 五条 Middleware 管道 | 拦截/改写/审计的统一机制，Hooks 的底座 |
-| Decorator | 工具包装 | 缓存/限流/审计/凭证按工具粒度叠加 |
-| Command | ToolCall | 可序列化、可挂起待批、可重放 |
-| Composite | Prompt slot 树 / ToolGroup / SubAgent | 局部覆盖、分组权限、子 agent 即工具 |
-| Adapter | 所有 Provider | 统一 Port 语义 |
-| Abstract Factory | Preset | 一行切换整族基建 |
-| Builder | AgentBuilder | 装配收敛、构建时校验 |
-| Proxy | 远程 agent / 凭证代理 / 回放 Adapter | 位置透明、密钥隔离、离线回放 |
-| Facade | `createAgent()` 顶层 API | 三行代码跑通，复杂度按需展开 |
-| Null Object | Noop/InMemory 实现 | 零依赖跑通 demo |
-| Observer / Pub-Sub | 事件总线 | UI/Trace/外发订阅同一事件流 |
-| Pipeline | Context 组装 | 每阶段可检查，dry-run 显微镜 |
-| Circuit Breaker / Bulkhead | Provider 稳定性 | 单点抖动不拖垮全局 |
-| Saga / Durable Execution | L3 长任务 | 暂停/恢复/迁移 |
+| 模式                       | 落点                                  | 解决什么                               |
+| -------------------------- | ------------------------------------- | -------------------------------------- |
+| Ports & Adapters（六边形） | 全局骨架                              | Kernel 与基建解耦，厂商可插拔          |
+| Anti-Corruption Layer      | 每个 Provider 包                      | 厂商 SDK 概念不泄漏进内核              |
+| Event Sourcing             | Session 状态                          | 崩溃恢复/回放/审计/回溯 四合一         |
+| Memento                    | Checkpoint 快照                       | 长会话恢复提速                         |
+| Template Method            | AgentLoop                             | 循环骨架稳定，步骤可挂策略             |
+| State                      | Session 状态机                        | 非法状态转移在类型层面被拒绝           |
+| Strategy + Registry        | 压缩/记忆/路由/权限/…                 | 一切模式可换，配置切换，社区可贡献     |
+| Chain of Responsibility    | 五条 Middleware 管道                  | 拦截/改写/审计的统一机制，Hooks 的底座 |
+| Decorator                  | 工具包装                              | 缓存/限流/审计/凭证按工具粒度叠加      |
+| Command                    | ToolCall                              | 可序列化、可挂起待批、可重放           |
+| Composite                  | Prompt slot 树 / ToolGroup / SubAgent | 局部覆盖、分组权限、子 agent 即工具    |
+| Adapter                    | 所有 Provider                         | 统一 Port 语义                         |
+| Abstract Factory           | Preset                                | 一行切换整族基建                       |
+| Builder                    | AgentBuilder                          | 装配收敛、构建时校验                   |
+| Proxy                      | 远程 agent / 凭证代理 / 回放 Adapter  | 位置透明、密钥隔离、离线回放           |
+| Facade                     | `createAgent()` 顶层 API              | 三行代码跑通，复杂度按需展开           |
+| Null Object                | Noop/InMemory 实现                    | 零依赖跑通 demo                        |
+| Observer / Pub-Sub         | 事件总线                              | UI/Trace/外发订阅同一事件流            |
+| Pipeline                   | Context 组装                          | 每阶段可检查，dry-run 显微镜           |
+| Circuit Breaker / Bulkhead | Provider 稳定性                       | 单点抖动不拖垮全局                     |
+| Saga / Durable Execution   | L3 长任务                             | 暂停/恢复/迁移                         |
 
 **反模式警戒线**：不引入 DI 容器魔法；不做深继承层次（组合优先）；不允许"第 3 种扩展机制"未经宪法条款（§5 开头）审议进入内核；Kernel 不出现任何厂商类型与写死 prompt。
 
@@ -592,13 +598,13 @@ packages/kernel/src/
 
 ## 17. Roadmap
 
-| 里程碑 | 内容 | 验收标准 |
-| --- | --- | --- |
-| **M0** 协议与内核 | L0 spec 定稿；TS Kernel：事件溯源循环、Strategy/Middleware/Prompt 三机制、Null Object 全套 | 零依赖跑通一个能崩溃恢复、可回放的最小 coding agent |
-| **M1** Coding 能力包 + 本地 preset | `@openagentcore/coding` 全量；`oss-local` preset；CLI；Record&Replay | 在真实仓库完成一次"改代码→跑测试→提交"闭环，中断后恢复续跑 |
-| **M2** 国内云 Providers | 腾讯/阿里/火山的 Model+Sandbox+Trace adapter；conformance suite v1 | `preset: 'tencent-full'` 一行切换，能力矩阵自动生成 |
-| **M3** Runtime + UI Kit | L3 server、UI 线协议、`@openagentcore/ui-react`、审批流、触发器 | 用 UI Kit 半天拼出一个可用的 Web Coding Agent 产品 |
-| **M4** Python SDK + 生态 | Python 镜像实现；Skill/Connector registry；eval 框架 | 双语言过 spec 一致性测试；首批社区 connector 认证 |
+| 里程碑                             | 内容                                                                                       | 验收标准                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| **M0** 协议与内核                  | L0 spec 定稿；TS Kernel：事件溯源循环、Strategy/Middleware/Prompt 三机制、Null Object 全套 | 零依赖跑通一个能崩溃恢复、可回放的最小 coding agent        |
+| **M1** Coding 能力包 + 本地 preset | `@openagentcore/coding` 全量；`oss-local` preset；CLI；Record&Replay                       | 在真实仓库完成一次"改代码→跑测试→提交"闭环，中断后恢复续跑 |
+| **M2** 国内云 Providers            | 腾讯/阿里/火山的 Model+Sandbox+Trace adapter；conformance suite v1                         | `preset: 'tencent-full'` 一行切换，能力矩阵自动生成        |
+| **M3** Runtime + UI Kit            | L3 server、UI 线协议、`@openagentcore/ui-react`、审批流、触发器                            | 用 UI Kit 半天拼出一个可用的 Web Coding Agent 产品         |
+| **M4** Python SDK + 生态           | Python 镜像实现；Skill/Connector registry；eval 框架                                       | 双语言过 spec 一致性测试；首批社区 connector 认证          |
 
 **打穿点（对外叙事）**：M1 完成即对外发布——"一个能崩溃恢复、可确定性回放、全量 Prompt 可调的开源 Coding Agent SDK"，M2 补上"国内云一等公民"的差异化，其余能力以插件形态生长。
 
