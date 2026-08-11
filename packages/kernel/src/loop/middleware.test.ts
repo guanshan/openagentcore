@@ -192,19 +192,42 @@ describe('cost accounting middleware', () => {
   it('does not count a step rejected by downstream middleware', async () => {
     const accounting = createCostAccountingMiddleware();
     const rejected = new Error('append rejected');
+    const rejectedContext = createEventContext(
+      stepFinished(1, { inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
+    );
+    rejectedContext.persisted = false;
     await expect(
-      accounting(
-        createEventContext(stepFinished(1, { inputTokens: 10, outputTokens: 5, totalTokens: 15 })),
-        async () => {
-          throw rejected;
-        },
-      ),
+      accounting(rejectedContext, async () => {
+        throw rejected;
+      }),
     ).rejects.toBe(rejected);
 
     const finished = createEventContext(turnFinished(2));
     await accounting(finished, async () => {});
     expect(finished.event).toMatchObject({
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    });
+  });
+
+  it('counts a step persisted before downstream middleware throws', async () => {
+    const accounting = createCostAccountingMiddleware();
+    const persisted = createEventContext(
+      stepFinished(1, { inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
+    );
+    persisted.persisted = false;
+    const downstream = new Error('after append');
+
+    await expect(
+      accounting(persisted, async () => {
+        persisted.persisted = true;
+        throw downstream;
+      }),
+    ).rejects.toBe(downstream);
+
+    const finished = createEventContext(turnFinished(2));
+    await accounting(finished, async () => {});
+    expect(finished.event).toMatchObject({
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
     });
   });
 
@@ -223,7 +246,7 @@ describe('cost accounting middleware', () => {
     });
   });
 
-  it('rejects mixed currencies before appending the incompatible step', async () => {
+  it('reports mixed currencies after the incompatible step is persisted', async () => {
     const accounting = createCostAccountingMiddleware();
     await accounting(
       createEventContext(
@@ -246,7 +269,7 @@ describe('cost accounting middleware', () => {
         terminal,
       ),
     ).rejects.toBeInstanceOf(CostAccountingError);
-    expect(terminal).not.toHaveBeenCalled();
+    expect(terminal).toHaveBeenCalledOnce();
   });
 });
 

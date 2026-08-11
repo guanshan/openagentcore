@@ -165,13 +165,12 @@ export function createCostAccountingMiddleware(): Middleware<EventMiddlewareCont
 
     if (event.type === 'step.finished' && key !== undefined) {
       const existing = usageByTurn.get(key) ?? emptyUsage();
-      const proposed = addUsage(existing, event.usage);
-      await next();
-      if (context.persisted && context.event.type === 'step.finished') {
-        usageByTurn.set(
-          key,
-          context.event === event ? proposed : addUsage(existing, context.event.usage),
-        );
+      try {
+        await next();
+      } finally {
+        if (context.persisted && context.event.type === 'step.finished') {
+          usageByTurn.set(key, addUsage(existing, context.event.usage));
+        }
       }
       return;
     }
@@ -179,9 +178,12 @@ export function createCostAccountingMiddleware(): Middleware<EventMiddlewareCont
     if (event.type === 'turn.finished' && key !== undefined) {
       const usage = usageByTurn.get(key) ?? emptyUsage();
       context.event = { ...event, usage: finalizeUsage(usage) };
-      await next();
-      if (context.persisted) {
-        usageByTurn.delete(key);
+      try {
+        await next();
+      } finally {
+        if (context.persisted) {
+          usageByTurn.delete(key);
+        }
       }
       return;
     }
