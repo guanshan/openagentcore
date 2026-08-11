@@ -146,6 +146,29 @@ describe('message history projection', () => {
     ]);
   });
 
+  it('batch-replays to an immutable state equivalent to the public reducer', async () => {
+    const initialState = await projectMessageHistory([turnStarted(0), modelDelta(1, 'A')]);
+    const initialSnapshot = structuredClone(initialState);
+    const tail: AgentEvent[] = [
+      modelDelta(2, 'B'),
+      toolCall(3),
+      compaction(4, 1, 2, 'Assistant response.'),
+      toolResult(5),
+    ];
+
+    let reducedState = initialState;
+    for (const event of tail) {
+      reducedState = applyEventToMessageProjection(reducedState, event);
+    }
+    const batchState = await projectMessageHistory(tail, initialState);
+
+    expect(batchState).toEqual(reducedState);
+    expect(materializeMessageHistory(batchState)).toEqual(materializeMessageHistory(reducedState));
+    expect(initialState).toEqual(initialSnapshot);
+    expect(Object.isFrozen(batchState)).toBe(true);
+    expect(Object.isFrozen(batchState.entries)).toBe(true);
+  });
+
   it('folds an inclusive range without deleting unrelated delta fragments', async () => {
     const projection = await projectMessageHistory([
       turnStarted(0),

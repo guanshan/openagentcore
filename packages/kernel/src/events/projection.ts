@@ -102,75 +102,88 @@ export class ProjectionInvariantError extends Error {
 }
 
 export function createMessageProjection(): MessageProjectionState {
-  return { entries: [] };
+  return finalizeMessageProjection([]);
 }
 
 export function applyEventToMessageProjection(
   state: MessageProjectionState,
   event: AgentEvent,
 ): MessageProjectionState {
-  switch (event.type) {
-    case 'turn.started':
-      return appendEntry(state, {
-        kind: 'message',
-        role: 'user',
-        content: event.input.content,
-        sourceSeq: event.seq,
-      });
-
-    case 'model.delta':
-      if (event.delta.kind === 'text') {
-        return appendEntry(state, {
-          kind: 'message',
-          role: 'assistant',
-          stepId: event.stepId,
-          content: event.delta.text,
-          sourceSeq: event.seq,
-        });
-      }
-      return state;
-
-    case 'tool.call':
-      return appendEntry(state, {
-        kind: 'tool-call',
-        callId: event.callId,
-        tool: event.tool,
-        args: event.args,
-        sourceSeq: event.seq,
-      });
-
-    case 'tool.result':
-      return appendEntry(state, {
-        kind: 'tool-result',
-        callId: event.callId,
-        result: event.result,
-        sourceSeq: event.seq,
-      });
-
-    case 'compaction.applied':
-      return applyCompaction(state, event.seq, event.summary, event.dropped);
-
-    case 'model.request':
-    case 'permission.requested':
-    case 'permission.resolved':
-    case 'checkpoint.created':
-    case 'turn.finished':
-      return state;
-
-    default:
-      return rejectUnknownEvent(event);
+  const entries = [...state.entries];
+  if (!applyEventToEntries(entries, event)) {
+    return state;
   }
+  return finalizeMessageProjection(entries);
 }
 
 export async function projectMessageHistory(
   events: Iterable<AgentEvent> | AsyncIterable<AgentEvent>,
   initialState: MessageProjectionState = createMessageProjection(),
 ): Promise<MessageProjectionState> {
-  let state = initialState;
+  const entries = [...initialState.entries];
   for await (const event of events) {
-    state = applyEventToMessageProjection(state, event);
+    applyEventToEntries(entries, event);
   }
-  return state;
+  return finalizeMessageProjection(entries);
+}
+
+function applyEventToEntries(entries: MessageProjectionEntry[], event: AgentEvent): boolean {
+  switch (event.type) {
+    case 'turn.started':
+      entries.push({
+        kind: 'message',
+        role: 'user',
+        content: event.input.content,
+        sourceSeq: event.seq,
+      });
+      return true;
+
+    case 'model.delta':
+      if (event.delta.kind === 'text') {
+        entries.push({
+          kind: 'message',
+          role: 'assistant',
+          stepId: event.stepId,
+          content: event.delta.text,
+          sourceSeq: event.seq,
+        });
+        return true;
+      }
+      return false;
+
+    case 'tool.call':
+      entries.push({
+        kind: 'tool-call',
+        callId: event.callId,
+        tool: event.tool,
+        args: event.args,
+        sourceSeq: event.seq,
+      });
+      return true;
+
+    case 'tool.result':
+      entries.push({
+        kind: 'tool-result',
+        callId: event.callId,
+        result: event.result,
+        sourceSeq: event.seq,
+      });
+      return true;
+
+    case 'compaction.applied':
+      applyCompaction(entries, event.seq, event.summary, event.dropped);
+      return true;
+
+    case 'model.request':
+    case 'permission.requested':
+    case 'permission.resolved':
+    case 'checkpoint.created':
+    case 'turn.finished':
+      return false;
+
+    default:
+      return rejectUnknownEvent(event);
+  }
 }
 
 export function materializeMessageHistory(
@@ -201,19 +214,12 @@ export function materializeMessageHistory(
   return history;
 }
 
-function appendEntry(
-  state: MessageProjectionState,
-  entry: MessageProjectionEntry,
-): MessageProjectionState {
-  return { entries: [...state.entries, entry] };
-}
-
 function applyCompaction(
-  state: MessageProjectionState,
+  entries: MessageProjectionEntry[],
   compactionSeq: number,
   summary: string,
   dropped: EventRange,
-): MessageProjectionState {
+): void {
   if (
     !Number.isInteger(dropped.fromSeq) ||
     !Number.isInteger(dropped.toSeq) ||
@@ -229,7 +235,7 @@ function applyCompaction(
   const removedSummaries: SummaryProjectionEntry[] = [];
   const droppedIndexes = new Set<number>();
 
-  state.entries.forEach((entry, index) => {
+  entries.forEach((entry, index) => {
     if (entry.kind !== 'summary') {
       if (containsSeq(dropped, entry.sourceSeq)) {
         droppedIndexes.add(index);
@@ -257,7 +263,7 @@ function applyCompaction(
     }
   });
 
-  const retained = state.entries.filter((_, index) => !droppedIndexes.has(index));
+  const retained = entries.filter((_, index) => !droppedIndexes.has(index));
   const representedRanges = normalizeRanges([
     dropped,
     ...removedSummaries.flatMap((entry) => entry.representedRanges),
@@ -274,9 +280,12 @@ function applyCompaction(
   const nextIndex = retained.findIndex((entry) => projectionPosition(entry) > compactedPosition);
   const insertionIndex = nextIndex < 0 ? retained.length : nextIndex;
 
-  return {
-    entries: [...retained.slice(0, insertionIndex), compacted, ...retained.slice(insertionIndex)],
-  };
+  retained.splice(insertionIndex, 0, compacted);
+  entries.splice(0, entries.length, ...retained);
+}
+
+function finalizeMessageProjection(entries: MessageProjectionEntry[]): MessageProjectionState {
+  return Object.freeze({ entries: Object.freeze(entries) });
 }
 
 function projectionPosition(entry: MessageProjectionEntry): number {
