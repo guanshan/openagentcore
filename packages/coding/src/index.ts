@@ -15,6 +15,7 @@ export * from './workspace.js';
 export interface CodingToolsetOptions {
   readonly root: string;
   readonly maxOutputBytes?: number;
+  readonly gitEnvironment?: Readonly<Record<string, string | undefined>>;
 }
 
 export interface CodingToolset {
@@ -37,8 +38,26 @@ export function createCodingToolset(options: CodingToolsetOptions): CodingToolse
       ),
       { groups: ['coding/execute'] },
     )
-    .register(new GitCreateBranchTool(workspace), { groups: ['coding/git'] })
-    .register(new GitDiffTool(workspace), { groups: ['coding/git'] })
-    .register(new GitCommitTool(workspace), { groups: ['coding/git'] });
+    .register(
+      new GitCreateBranchTool(
+        workspace,
+        options.gitEnvironment === undefined ? {} : { environment: options.gitEnvironment },
+      ),
+      { groups: ['coding/git'] },
+    )
+    .register(
+      new GitDiffTool(
+        workspace,
+        options.gitEnvironment === undefined ? {} : { environment: options.gitEnvironment },
+      ),
+      { groups: ['coding/git'] },
+    )
+    .register(
+      new GitCommitTool(
+        workspace,
+        options.gitEnvironment === undefined ? {} : { environment: options.gitEnvironment },
+      ),
+      { groups: ['coding/git'] },
+    );
   return Object.freeze({ workspace, registry });
 }

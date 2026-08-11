@@ -68,6 +68,9 @@ importers:
       '@openagentcore/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@openagentcore/standard':
+        specifier: workspace:*
+        version: link:../../providers/standard
 
   packages/kernel:
     devDependencies:

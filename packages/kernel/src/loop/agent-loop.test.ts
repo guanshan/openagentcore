@@ -1261,6 +1261,54 @@ describe('AgentLoop', () => {
     );
     expect(tool.requests).toHaveLength(1);
   });
+
+  it('continues after recovery persists a business-level failed tool result', async () => {
+    const log = new InMemoryEventLog(identity('recovery-result-failed'));
+    const tool = new CrashOnceTool(true, 'failed');
+    const crashing = new AgentLoop({
+      eventLog: log,
+      model: new ScriptedModelPort([
+        [toolCall('call-result-failed', 'work', null), { kind: 'finish', reason: 'tool-calls' }],
+      ]),
+      tools: new ToolRegistry().register(tool),
+      strategies: retryTwice(),
+      now: () => timestamp,
+    });
+    await expect(crashing.runTurn({ content: 'Recover a test failure.' })).rejects.toBeInstanceOf(
+      AgentLoopCrashError,
+    );
+
+    const resumed = new AgentLoop({
+      eventLog: log,
+      model: new ScriptedModelPort([
+        [
+          { kind: 'text', text: 'Failure observed and corrected.' },
+          { kind: 'finish', reason: 'stop' },
+        ],
+      ]),
+      tools: new ToolRegistry().register(tool),
+      strategies: retryTwice(),
+      now: () => timestamp,
+    });
+    const result = await resumed.resumeTurn();
+
+    expect(result.stopReason).toBe('completed');
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'tool.result',
+        callId: 'call-result-failed',
+        outcome: 'failed',
+        attempts: 2,
+      }),
+    );
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'step.finished',
+        stepId: 'turn-0:step:1',
+        outcome: 'succeeded',
+      }),
+    );
+  });
 });
 
 interface LoopOverrides {
@@ -1393,9 +1441,11 @@ class CrashOnceTool implements Tool {
   readonly permission = { kind: 'write', description: 'Run recoverable work.' } as const;
   readonly requests: { callId: string; args: JsonValue; attempt: number }[] = [];
   #crash: boolean;
+  readonly #outcome: 'succeeded' | 'failed';
 
-  constructor(crash: boolean) {
+  constructor(crash: boolean, outcome: 'succeeded' | 'failed' = 'succeeded') {
     this.#crash = crash;
+    this.#outcome = outcome;
   }
 
   async execute(
@@ -1408,6 +1458,6 @@ class CrashOnceTool implements Tool {
       this.#crash = false;
       throw new AgentLoopCrashError('simulated process loss');
     }
-    return { outcome: 'succeeded' as const, result: structuredClone(request.args) };
+    return { outcome: this.#outcome, result: structuredClone(request.args) };
   }
 }

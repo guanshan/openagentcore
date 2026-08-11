@@ -26,6 +26,7 @@
     "@openagentcore/kernel": "^0.1.0"
   },
   "devDependencies": {
-    "@openagentcore/kernel": "workspace:*"
+    "@openagentcore/kernel": "workspace:*",
+    "@openagentcore/standard": "workspace:*"
   }
 }

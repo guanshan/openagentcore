@@ -131,7 +131,8 @@ export async function recoverActiveStep(
   const stepResults = await runtime.eventsForStep(refreshed.activeStep.stepId);
   const failed = stepResults.some(
     (event) =>
-      event.type === 'tool.result' && event.outcome !== undefined && event.outcome !== 'succeeded',
+      event.type === 'tool.result' &&
+      (event.outcome === 'denied' || (event.outcome === 'failed' && event.error !== undefined)),
   );
   const completedToolWork = stepResults.some((event) => event.type === 'tool.call');
   const recoveredUsage = [...stepResults]

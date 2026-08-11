@@ -20,14 +20,20 @@ const gitWritePermission: ToolPermissionDescriptor = Object.freeze({
   description: 'Changes Git branch or commit state inside the repository.',
 });
 
+export interface GitToolOptions {
+  readonly environment?: Readonly<Record<string, string | undefined>>;
+}
+
 abstract class GitTool implements Tool {
   abstract readonly name: string;
   abstract readonly inputSchema: JsonObject;
   abstract readonly permission: ToolPermissionDescriptor;
   protected readonly workspace: RepositoryWorkspace;
+  readonly #environment: Readonly<Record<string, string | undefined>> | undefined;
 
-  constructor(workspace: RepositoryWorkspace) {
+  constructor(workspace: RepositoryWorkspace, options: GitToolOptions = {}) {
     this.workspace = workspace;
+    this.#environment = options.environment;
   }
 
   abstract execute(
@@ -36,7 +42,15 @@ abstract class GitTool implements Tool {
   ): Promise<ToolExecutionResult>;
 
   protected async git(args: readonly string[], signal: AbortSignal) {
-    return runProcess({ command: 'git', args, cwd: this.workspace.root }, signal);
+    return runProcess(
+      {
+        command: 'git',
+        args,
+        cwd: this.workspace.root,
+        ...(this.#environment === undefined ? {} : { environment: this.#environment }),
+      },
+      signal,
+    );
   }
 }
 
