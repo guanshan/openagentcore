@@ -11,7 +11,7 @@
 
 1. `append(event, expectedLastSeq?)` 支持可选的乐观并发前置条件。空流的流头是 `-1`；提供的期望值与实际流头不一致时，抛出 `EventLogConflictError`，且不得写入或通知订阅者。持久化实现必须在同一原子操作中完成比较与追加。
 2. `read(fromSeq)` 返回从包含性游标开始的、可重复迭代的有限快照。分布式消费者负责持久化游标并重试，以至少一次语义处理事件。
-3. `subscribe` 只提供单进程内的便利通知，不承诺跨进程投递。订阅者异常与 append 隔离，并可通过 `onSubscriberError` 回调上报。
+3. `subscribe` 只提供单进程内的便利通知，不承诺跨进程投递。订阅者的同步异常与异步 rejection 均与 append 隔离，并可通过 `onSubscriberError` 回调上报；append 不等待订阅者完成，错误回调自身的失败也不得形成未处理 rejection。
 
 以上契约只收紧接口语义，不选择分布式存储方案。
 

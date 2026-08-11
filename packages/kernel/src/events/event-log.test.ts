@@ -150,6 +150,27 @@ describe('InMemoryEventLog', () => {
     await expect(collect(log.read(0))).resolves.toEqual([turnStarted(0)]);
   });
 
+  it('reports asynchronous subscriber rejections without blocking append', async () => {
+    const log = new InMemoryEventLog(identity);
+    const subscriberError = new Error('async subscriber failed');
+    const onSubscriberError = vi.fn(async () => {
+      throw new Error('async error reporter failed');
+    });
+    const secondSubscriber = vi.fn();
+    log.subscribe(async () => {
+      throw subscriberError;
+    }, onSubscriberError);
+    log.subscribe(secondSubscriber);
+
+    await expect(log.append(turnStarted(0))).resolves.toBeUndefined();
+
+    expect(secondSubscriber).toHaveBeenCalledWith(turnStarted(0));
+    await vi.waitFor(() => {
+      expect(onSubscriberError).toHaveBeenCalledWith(subscriberError, turnStarted(0));
+    });
+    await expect(collect(log.read(0))).resolves.toEqual([turnStarted(0)]);
+  });
+
   it('rejects invalid sequence inputs at the log boundary', async () => {
     const log = new InMemoryEventLog(identity);
     const invalidEvent = { ...turnStarted(0), seq: -1 };

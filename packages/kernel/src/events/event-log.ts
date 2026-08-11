@@ -5,9 +5,9 @@ export interface EventStreamIdentity {
   readonly sessionId: string;
 }
 
-export type EventSubscriber = (event: AgentEvent) => void;
+export type EventSubscriber = (event: AgentEvent) => void | Promise<void>;
 
-export type SubscriberErrorHandler = (error: unknown, event: AgentEvent) => void;
+export type SubscriberErrorHandler = (error: unknown, event: AgentEvent) => void | Promise<void>;
 
 export type Unsubscribe = () => void;
 
@@ -27,6 +27,7 @@ export interface EventLog extends EventStreamIdentity {
   /**
    * Registers a process-local convenience subscriber for future successful appends.
    * This does not provide cross-process delivery; subscriber failures are isolated from append.
+   * Returned promises are observed for rejection but are not awaited by append.
    */
   subscribe(subscriber: EventSubscriber, onSubscriberError?: SubscriberErrorHandler): Unsubscribe;
 }
@@ -106,14 +107,34 @@ export class InMemoryEventLog implements EventLog {
     this.#events.push(storedEvent);
     for (const [subscriber, onSubscriberError] of this.#subscribers) {
       try {
-        subscriber(structuredClone(storedEvent));
-      } catch (error) {
-        try {
-          onSubscriberError?.(error, structuredClone(storedEvent));
-        } catch {
-          // Error reporting is best-effort and must not affect append or other subscribers.
+        const delivery = subscriber(structuredClone(storedEvent));
+        if (delivery !== undefined) {
+          void delivery.catch((error: unknown) => {
+            this.#reportSubscriberError(onSubscriberError, error, storedEvent);
+          });
         }
+      } catch (error) {
+        this.#reportSubscriberError(onSubscriberError, error, storedEvent);
       }
+    }
+  }
+
+  #reportSubscriberError(
+    onSubscriberError: SubscriberErrorHandler | undefined,
+    error: unknown,
+    event: AgentEvent,
+  ): void {
+    if (onSubscriberError === undefined) {
+      return;
+    }
+
+    try {
+      const reporting = onSubscriberError(error, structuredClone(event));
+      if (reporting !== undefined) {
+        void reporting.catch(() => undefined);
+      }
+    } catch {
+      // Error reporting is best-effort and must not affect append or other subscribers.
     }
   }
 
