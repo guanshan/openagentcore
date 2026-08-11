@@ -1,3 +1,6 @@
+export const dependencyCruiserBaseExcludePath = '(?:^|/)(?:coverage|dist|node_modules)(?:/|$)';
+const dependencyCruiserProbePath = '^packages/kernel/src/boundary-self-test-probe\\.ts$';
+
 /** @type {import('dependency-cruiser').IConfiguration} */
 const config = {
   forbidden: [
@@ -32,7 +35,9 @@ const config = {
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
-    exclude: { path: '(?:^|/)(?:coverage|dist|node_modules)(?:/|$)' },
+    exclude: {
+      path: `(?:${dependencyCruiserBaseExcludePath}|${dependencyCruiserProbePath})`,
+    },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
       exportsFields: ['exports'],
