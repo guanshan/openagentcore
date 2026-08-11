@@ -35,6 +35,12 @@ export type {
   CheckpointCreatedEvent,
   CompactionAppliedEvent,
   ContextAssembly,
+  ContextAssemblyMessage,
+  ContextAssemblyTool,
+  ContextSegment,
+  ContextSegmentSource,
+  ContextStageId,
+  ContextStageSnapshot,
   EventRange,
   JsonObject,
   JsonPrimitive,
@@ -60,6 +66,25 @@ export type {
   TurnStartedEvent,
   UserInput,
 } from './events/types.js';
+
+export {
+  BUILTIN_PROMPTS,
+  BUILTIN_PROMPT_SOURCE,
+  BUILTIN_PROMPT_SOURCE_VERSION,
+  createDefaultPromptRegistry,
+} from './prompts/builtins.js';
+export { PROMPT_SOURCE_KINDS, PromptRegistry, PromptRegistryError } from './prompts/registry.js';
+export type {
+  Prompt,
+  PromptContribution,
+  PromptDefinition,
+  PromptOverrideMode,
+  PromptRegistrySnapshot,
+  PromptSourceInfo,
+  PromptSourceKind,
+  PromptSourceRef,
+  PromptSourceSnapshot,
+} from './prompts/registry.js';
 
 export { ScriptedModelExhaustedError, ScriptedModelPort } from './ports/model.js';
 export type {
@@ -158,6 +183,7 @@ export type {
   MiddlewareBaseContext,
   MiddlewareContextMap,
   MiddlewareKind,
+  MiddlewareExecutionMode,
   MiddlewareNext,
   ModelMiddlewareContext,
   ToolMiddlewareContext,
@@ -195,10 +221,13 @@ export {
   PROMPTED_TOOL_CALL_PREFIX,
   UnknownToolResultError,
 } from './loop/agent-loop.js';
+export { formatContextAssembly } from './loop/context.js';
 export type {
   AgentLoopOptions,
   AgentLoopSleeper,
   AgentLoopStrategySelections,
+  DryRunContextOptions,
+  DryRunContextResult,
   RunTurnOptions,
   StrategySelection,
   TurnResult,

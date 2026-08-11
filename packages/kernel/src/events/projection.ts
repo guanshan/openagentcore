@@ -30,6 +30,7 @@ interface ToolResultProjectionEntry {
   readonly kind: 'tool-result';
   readonly callId: string;
   readonly result: JsonValue;
+  readonly outcome?: 'succeeded' | 'failed' | 'denied';
   readonly sourceSeq: number;
 }
 
@@ -40,6 +41,7 @@ interface SummaryProjectionEntry {
   readonly contentRanges: NonEmptyEventRanges;
   readonly compactionSeqs: readonly number[];
   readonly sourceSeq: number;
+  readonly strategy?: string;
 }
 
 export type MessageProjectionEntry =
@@ -89,6 +91,7 @@ interface SummaryHistoryItem {
   readonly dropped: EventRange;
   readonly contentRanges: NonEmptyEventRanges;
   readonly sourceSeqs: readonly number[];
+  readonly strategy?: string;
 }
 
 export type MessageHistoryItem =
@@ -184,12 +187,13 @@ function applyEventToEntries(entries: MessageProjectionEntry[], event: AgentEven
         kind: 'tool-result',
         callId: event.callId,
         result: structuredClone(event.result),
+        ...(event.outcome === undefined ? {} : { outcome: event.outcome }),
         sourceSeq: event.seq,
       });
       return true;
 
     case 'compaction.applied':
-      applyCompaction(entries, event.seq, event.summary, event.dropped);
+      applyCompaction(entries, event.seq, event.summary, event.dropped, event.strategy);
       return true;
 
     case 'model.request':
@@ -239,6 +243,7 @@ function applyCompaction(
   compactionSeq: number,
   summary: string,
   dropped: EventRange,
+  strategy: string | undefined,
 ): void {
   if (
     !Number.isInteger(dropped.fromSeq) ||
@@ -305,6 +310,7 @@ function applyCompaction(
     contentRanges,
     compactionSeqs,
     sourceSeq: compactionSeq,
+    ...(strategy === undefined ? {} : { strategy }),
   };
   validateSummaryProjectionEntry(compacted, 'new summary');
   const compactedPosition = projectionPosition(compacted);
@@ -494,7 +500,11 @@ function validateMessageProjectionEntries(entries: readonly MessageProjectionEnt
         if (
           typeof entry.callId !== 'string' ||
           entry.callId.length === 0 ||
-          !isJsonValue(entry.result)
+          !isJsonValue(entry.result) ||
+          (entry.outcome !== undefined &&
+            entry.outcome !== 'succeeded' &&
+            entry.outcome !== 'failed' &&
+            entry.outcome !== 'denied')
         ) {
           throw new ProjectionInvariantError(
             `Tool-result projection entry at index ${index} is malformed.`,
@@ -550,6 +560,9 @@ function validateMessageProjectionEntries(entries: readonly MessageProjectionEnt
 function validateSummaryProjectionEntry(entry: SummaryProjectionEntry, label: string): void {
   if (typeof entry.content !== 'string') {
     throw new ProjectionInvariantError(`${label} must have string content.`);
+  }
+  if (entry.strategy !== undefined && entry.strategy.length === 0) {
+    throw new ProjectionInvariantError(`${label} must have a non-empty strategy when provided.`);
   }
   if (!isValidEventRange(entry.dropped) || entry.dropped.toSeq >= entry.sourceSeq) {
     throw new ProjectionInvariantError(`${label} has an invalid dropped range.`);
@@ -682,6 +695,7 @@ function materializeEntry(entry: MessageProjectionEntry): MessageHistoryItem {
         dropped: entry.dropped,
         contentRanges: entry.contentRanges,
         sourceSeqs: [entry.sourceSeq],
+        ...(entry.strategy === undefined ? {} : { strategy: entry.strategy }),
       };
   }
 }

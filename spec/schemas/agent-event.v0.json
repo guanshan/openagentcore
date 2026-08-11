@@ -331,6 +331,7 @@
           "properties": {
             "type": { "const": "compaction.applied" },
             "summary": { "type": "string" },
+            "strategy": { "type": "string", "minLength": 1 },
             "dropped": { "$ref": "#/$defs/eventRange" }
           }
         }

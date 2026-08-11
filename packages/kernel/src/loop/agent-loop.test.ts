@@ -194,6 +194,19 @@ describe('AgentLoop', () => {
     expect(compactions).toHaveLength(2);
     expect(compactions[0]?.summary).toContain('echo({"text":"compact"})');
     expect(compactions[1]?.summary).toContain('{"text":"compact"}');
+    expect(compactions.map((event) => event.strategy)).toEqual([
+      'sliding-window',
+      'sliding-window',
+    ]);
+    const preview = await loop.dryRunContext({ content: 'Inspect compacted context.' });
+    expect(preview.assembly.stages).toContainEqual(
+      expect.objectContaining({ stage: 'compaction', status: 'applied' }),
+    );
+    expect(preview.assembly.segments).toContainEqual(
+      expect.objectContaining({
+        source: expect.objectContaining({ kind: 'compaction', strategy: 'sliding-window' }),
+      }),
+    );
     await expectClosedAndSchemaValid(log, 'done');
   });
 

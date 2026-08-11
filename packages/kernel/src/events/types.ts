@@ -24,7 +24,71 @@ export interface UserInput {
   readonly content: string;
 }
 
-export type ContextAssembly = JsonObject;
+export type ContextStageId =
+  | 'history'
+  | 'memory'
+  | 'skills'
+  | 'compaction'
+  | 'slots'
+  | 'context-middleware'
+  | 'model-middleware';
+
+export interface ContextAssemblyMessage extends JsonObject {
+  readonly role: 'system' | 'user' | 'assistant' | 'tool';
+  readonly content: string;
+  readonly name?: string;
+  readonly toolCallId?: string;
+}
+
+export interface ContextAssemblyTool extends JsonObject {
+  readonly name: string;
+  readonly description?: string;
+  readonly inputSchema: JsonObject;
+}
+
+export interface ContextSegmentSource extends JsonObject {
+  readonly kind:
+    'event' | 'prompt' | 'memory' | 'skill' | 'compaction' | 'middleware' | 'dry-run-input';
+  readonly id?: string;
+  readonly sourceSeqs?: readonly number[];
+  readonly promptId?: string;
+  readonly promptSource?: 'builtin' | 'directory' | 'runtime';
+  readonly sourceVersion?: string;
+  readonly version?: string;
+  readonly mode?: 'replace' | 'append';
+  readonly middlewareKind?: 'context' | 'model';
+  readonly strategy?: string;
+}
+
+export interface ContextSegment extends JsonObject {
+  readonly id: string;
+  readonly stage: ContextStageId;
+  readonly role: 'system' | 'user' | 'assistant' | 'tool';
+  readonly content: string;
+  readonly source: ContextSegmentSource;
+  readonly tokenCount: number | null;
+  readonly messageIndex: number;
+}
+
+export interface ContextStageSnapshot extends JsonObject {
+  readonly stage: ContextStageId;
+  readonly status: 'applied' | 'noop';
+  readonly messages: readonly ContextAssemblyMessage[];
+  readonly segmentIds: readonly string[];
+  readonly tokenCount: number | null;
+}
+
+export interface ContextAssembly extends JsonObject {
+  readonly messages: readonly ContextAssemblyMessage[];
+  readonly tools: readonly ContextAssemblyTool[];
+  readonly toolUse: 'native' | 'prompted' | 'none';
+  readonly metadata?: JsonObject;
+  readonly stages: readonly ContextStageSnapshot[];
+  readonly segments: readonly ContextSegment[];
+  readonly totalTokens: number | null;
+  readonly promptRevision: number;
+  readonly capabilityDowngrades: readonly string[];
+}
 
 export interface TextDelta {
   readonly kind: 'text';
@@ -139,6 +203,7 @@ export interface PermissionResolvedEvent extends BaseAgentEvent<'permission.reso
 export interface CompactionAppliedEvent extends BaseAgentEvent<'compaction.applied'> {
   readonly summary: string;
   readonly dropped: EventRange;
+  readonly strategy?: string;
 }
 
 export interface CheckpointCreatedEvent extends BaseAgentEvent<'checkpoint.created'> {

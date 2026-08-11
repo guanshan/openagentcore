@@ -22,6 +22,7 @@ const baseContext: MiddlewareBaseContext = {
   sessionId: 'session-test',
   turnId: 'turn-1',
   stepId: 'step-1',
+  mode: 'execute',
 };
 
 describe('MiddlewarePipeline', () => {

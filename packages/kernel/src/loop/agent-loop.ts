@@ -5,8 +5,10 @@ import {
   projectMessageHistory,
   type MessageHistoryItem,
 } from '../events/projection.js';
-import type { AgentEvent, ModelUsage, UserInput } from '../events/types.js';
-import type { ModelPort } from '../ports/model.js';
+import type { AgentEvent, ContextAssembly, ModelUsage, UserInput } from '../events/types.js';
+import type { ModelPort, ModelRequest } from '../ports/model.js';
+import { createDefaultPromptRegistry } from '../prompts/builtins.js';
+import type { PromptRegistry } from '../prompts/registry.js';
 import {
   createDefaultStrategyRegistry,
   type CheckpointDecision,
@@ -25,7 +27,15 @@ import {
 } from '../strategy/builtins.js';
 import type { Strategy, StrategyMetricsSnapshot, StrategyRegistry } from '../strategy/registry.js';
 import { ToolRegistry } from '../tools/tool.js';
-import { compactionEntries, middlewareContext } from './context.js';
+import {
+  assembleContext,
+  compactionEntries,
+  contextDraftToModelRequest,
+  finalizeContextAssembly,
+  formatContextAssembly,
+  measureContextAssembly,
+  middlewareContext,
+} from './context.js';
 import {
   createCostAccountingMiddleware,
   MiddlewareRegistry,
@@ -33,6 +43,7 @@ import {
   type Middleware,
   type MiddlewareContextMap,
   type MiddlewareKind,
+  type ModelMiddlewareContext,
 } from './middleware.js';
 import { closeAfterFailure, recoverActiveStep, type RecoveryRuntime } from './recovery.js';
 import {
@@ -74,12 +85,22 @@ export interface AgentLoopOptions {
   readonly tools?: ToolRegistry;
   readonly strategyRegistry?: StrategyRegistry;
   readonly strategies?: AgentLoopStrategySelections;
+  readonly prompts?: PromptRegistry;
   readonly now?: () => string;
   readonly sleep?: AgentLoopSleeper;
 }
 
 export interface RunTurnOptions {
   readonly signal?: AbortSignal;
+}
+
+export interface DryRunContextOptions {
+  readonly signal?: AbortSignal;
+}
+
+export interface DryRunContextResult {
+  readonly assembly: ContextAssembly;
+  readonly report: string;
 }
 
 export interface TurnResult {
@@ -128,6 +149,7 @@ export class AgentLoop {
   readonly model: ModelPort;
   readonly tools: ToolRegistry;
   readonly strategies: StrategyRegistry;
+  readonly prompts: PromptRegistry;
   readonly middleware: MiddlewareRegistry;
 
   readonly #selections: AgentLoopStrategySelections;
@@ -148,6 +170,7 @@ export class AgentLoop {
     this.model = options.model;
     this.tools = options.tools ?? new ToolRegistry();
     this.strategies = options.strategyRegistry ?? createDefaultStrategyRegistry();
+    this.prompts = options.prompts ?? createDefaultPromptRegistry();
     this.middleware = new MiddlewareRegistry().use('event', this.#costAccounting);
     this.#selections = options.strategies ?? {};
     this.#now = options.now ?? (() => new Date().toISOString());
@@ -168,6 +191,53 @@ export class AgentLoop {
 
   strategyMetrics(): readonly StrategyMetricsSnapshot[] {
     return this.strategies.metrics();
+  }
+
+  async dryRunContext(
+    input: UserInput,
+    options: DryRunContextOptions = {},
+  ): Promise<DryRunContextResult> {
+    return this.#exclusive(async () => {
+      const signal = options.signal ?? new AbortController().signal;
+      signal.throwIfAborted();
+      await this.#reloadState();
+      const turnId = this.#state.activeTurn?.turnId ?? `turn-${this.#state.lastSeq + 1}`;
+      const stepIndex = (this.#state.activeTurn?.lastStepIndex ?? 0) + 1;
+      const stepId = `${turnId}:step:${stepIndex}`;
+      const steeringLength = this.#steering.length;
+      try {
+        const draft = await assembleContext(
+          {
+            eventLog: this.eventLog,
+            model: this.model,
+            tools: this.tools,
+            prompts: this.prompts.snapshot(),
+            middleware: this.middleware,
+          },
+          turnId,
+          stepId,
+          signal,
+          { input: structuredClone(input), mode: 'dry-run' },
+        );
+        const context: ModelMiddlewareContext = {
+          ...middlewareContext(this.eventLog, signal, turnId, stepId, 'dry-run'),
+          request: contextDraftToModelRequest(draft, turnId, stepId),
+          chunks: [],
+        };
+        let capturedRequest: ModelRequest | undefined;
+        await this.middleware.run('model', context, async () => {
+          capturedRequest = structuredClone(context.request);
+        });
+        const assembly = await measureContextAssembly(
+          this.model,
+          finalizeContextAssembly(draft, capturedRequest ?? context.request),
+          signal,
+        );
+        return deepFreeze({ assembly, report: formatContextAssembly(assembly) });
+      } finally {
+        this.#steering.splice(steeringLength);
+      }
+    });
   }
 
   async runTurn(input: UserInput, options: RunTurnOptions = {}): Promise<TurnResult> {
@@ -253,7 +323,8 @@ export class AgentLoop {
   async #maybeCompact(turnId: string, stepId: string, signal: AbortSignal): Promise<void> {
     const projection = await projectMessageHistory(this.eventLog.read(0));
     const entries = compactionEntries(projection.entries);
-    const decision = await this.#requireStrategies().compaction.apply(
+    const strategy = this.#requireStrategies().compaction;
+    const decision = await strategy.apply(
       { entries },
       this.#strategyContext(signal, turnId, stepId),
     );
@@ -263,6 +334,7 @@ export class AgentLoop {
           type: 'compaction.applied',
           summary: decision.summary,
           dropped: decision.dropped,
+          strategy: strategy.name,
         },
         signal,
       );
@@ -294,6 +366,7 @@ export class AgentLoop {
       eventLog: this.eventLog,
       model: this.model,
       tools: this.tools,
+      prompts: this.prompts.snapshot(),
       middleware: this.middleware,
       permission: selected.permission,
       retry: selected.retry,
@@ -327,7 +400,12 @@ export class AgentLoop {
   }
 
   async #initializeStrategies(): Promise<void> {
-    const ports = { eventLog: this.eventLog, model: this.model, tools: this.tools };
+    const ports = {
+      eventLog: this.eventLog,
+      model: this.model,
+      tools: this.tools,
+      prompts: this.prompts,
+    };
     const stop = selection(this.#selections.stop, defaultSelections.stop);
     const compaction = selection(this.#selections.compaction, defaultSelections.compaction);
     const permission = selection(this.#selections.permission, defaultSelections.permission);
@@ -508,7 +586,7 @@ export class AgentLoop {
 
   async #exclusive<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
     if (this.#running) {
-      throw new AgentLoopInvariantError('AgentLoop does not allow concurrent runTurn/resumeTurn.');
+      throw new AgentLoopInvariantError('AgentLoop does not allow concurrent operations.');
     }
     this.#running = true;
     try {

@@ -11,6 +11,8 @@ export type MiddlewareNext = () => Promise<void>;
 
 export type Middleware<TContext> = (context: TContext, next: MiddlewareNext) => Promise<void>;
 
+export type MiddlewareExecutionMode = 'execute' | 'dry-run';
+
 export class MiddlewareNextError extends Error {
   constructor() {
     super('Middleware next() may only be called once.');
@@ -53,6 +55,8 @@ export interface MiddlewareBaseContext {
   readonly sessionId: string;
   readonly turnId: string;
   readonly stepId: string | undefined;
+  /** Dry runs expose the final request without invoking the ModelPort stream or writing events. */
+  readonly mode: MiddlewareExecutionMode;
 }
 
 export interface ModelMiddlewareContext extends MiddlewareBaseContext {

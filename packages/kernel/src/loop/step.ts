@@ -10,10 +10,12 @@ import type { Strategy, StrategyContext } from '../strategy/registry.js';
 import type { Tool, ToolExecutionRequest, ToolExecutionResult } from '../tools/tool.js';
 import {
   assembleContext,
+  contextDraftToModelRequest,
   type ContextRuntime,
+  type ContextAssemblyDraft,
+  finalizeContextAssembly,
   middlewareContext,
   modelRequestFromJson,
-  modelRequestToJson,
   PROMPTED_TOOL_CALL_PREFIX,
   runMemoryPipeline,
 } from './context.js';
@@ -333,20 +335,12 @@ async function callModel(
       event.type === 'model.request',
   );
   let request: ModelRequest;
+  let assemblyDraft: ContextAssemblyDraft | undefined;
   let capabilityDowngrades: readonly string[];
   if (persistedRequest === undefined) {
-    const assembled = await assembleContext(runtime, turnId, stepId, signal);
-    const metadata: JsonObject =
-      assembled.toolUse === 'prompted'
-        ? { turnId, stepId, toolProtocol: 'oac-prompted-tool-call-v0' }
-        : { turnId, stepId };
-    request = {
-      messages: assembled.messages,
-      tools: assembled.toolUse === 'none' ? [] : assembled.definitions,
-      toolUse: assembled.toolUse,
-      metadata,
-    };
-    capabilityDowngrades = assembled.capabilityDowngrades;
+    assemblyDraft = await assembleContext(runtime, turnId, stepId, signal);
+    request = contextDraftToModelRequest(assemblyDraft, turnId, stepId);
+    capabilityDowngrades = assemblyDraft.capabilityDowngrades;
   } else {
     const restored = modelRequestFromJson(persistedRequest.assembled);
     if (restored === undefined) {
@@ -444,12 +438,15 @@ async function callModel(
     if (requestRecorded) {
       return;
     }
+    if (assemblyDraft === undefined) {
+      throw new AgentLoopInvariantError(`Context assembly for ${stepId} is unavailable.`);
+    }
     await runtime.emit(
       {
         type: 'model.request',
         stepId,
         requestId,
-        assembled: modelRequestToJson(context.request),
+        assembled: finalizeContextAssembly(assemblyDraft, context.request),
         toolUse: context.request.toolUse,
         capabilityDowngrades,
       },
