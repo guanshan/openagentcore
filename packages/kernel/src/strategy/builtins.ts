@@ -291,9 +291,15 @@ export interface RetryStrategyInput {
   readonly error: unknown;
 }
 
-export interface RetryDecision {
-  readonly retry: boolean;
-  readonly delayMs: number;
+export type RetryAction = 'retry' | 'fail-turn' | 'feed-back';
+
+export type RetryDecision =
+  | { readonly action: 'retry'; readonly delayMs: number }
+  | { readonly action: Exclude<RetryAction, 'retry'> };
+
+export interface RetryOperationOverride {
+  readonly maxAttempts?: number;
+  readonly exhaustedAction?: Exclude<RetryAction, 'retry'>;
 }
 
 export interface ExponentialBackoffConfig {
@@ -302,6 +308,21 @@ export interface ExponentialBackoffConfig {
   readonly initialDelayMs: number;
   readonly multiplier?: number;
   readonly maxDelayMs?: number;
+  readonly exhaustedAction?: Exclude<RetryAction, 'retry'>;
+  readonly operationOverrides?: Readonly<
+    Partial<Record<RetryOperation, RetryOperationOverride>>
+  >;
+}
+
+interface NormalizedExponentialBackoffConfig {
+  readonly maxAttempts: number;
+  readonly initialDelayMs: number;
+  readonly multiplier: number;
+  readonly maxDelayMs: number;
+  readonly exhaustedAction: Exclude<RetryAction, 'retry'> | undefined;
+  readonly operationOverrides: Readonly<
+    Partial<Record<RetryOperation, RetryOperationOverride>>
+  >;
 }
 
 export class ExponentialBackoffRetryStrategy implements Strategy<
@@ -311,7 +332,7 @@ export class ExponentialBackoffRetryStrategy implements Strategy<
 > {
   readonly kind = 'retry';
   readonly name = 'exponential-backoff';
-  #config: Required<ExponentialBackoffConfig> | undefined;
+  #config: NormalizedExponentialBackoffConfig | undefined;
   #evaluations = 0;
   #retries = 0;
   #exhausted = 0;
@@ -320,9 +341,7 @@ export class ExponentialBackoffRetryStrategy implements Strategy<
     void ports;
     const multiplier = config.multiplier ?? 2;
     const maxDelayMs = config.maxDelayMs ?? Number.MAX_SAFE_INTEGER;
-    if (!Number.isInteger(config.maxAttempts) || config.maxAttempts < 1) {
-      throw new StrategyConfigError('maxAttempts must be a positive integer.');
-    }
+    validateMaxAttempts(config.maxAttempts, 'maxAttempts');
     if (!Number.isFinite(config.initialDelayMs) || config.initialDelayMs < 0) {
       throw new StrategyConfigError('initialDelayMs must be non-negative.');
     }
@@ -332,7 +351,20 @@ export class ExponentialBackoffRetryStrategy implements Strategy<
     if (!Number.isFinite(maxDelayMs) || maxDelayMs < 0) {
       throw new StrategyConfigError('maxDelayMs must be non-negative.');
     }
-    this.#config = { ...config, multiplier, maxDelayMs };
+    for (const operation of retryOperations) {
+      const override = config.operationOverrides?.[operation];
+      if (override?.maxAttempts !== undefined) {
+        validateMaxAttempts(override.maxAttempts, `operationOverrides.${operation}.maxAttempts`);
+      }
+    }
+    this.#config = {
+      maxAttempts: config.maxAttempts,
+      initialDelayMs: config.initialDelayMs,
+      multiplier,
+      maxDelayMs,
+      exhaustedAction: config.exhaustedAction,
+      operationOverrides: structuredClone(config.operationOverrides ?? {}),
+    };
   }
 
   async apply(input: RetryStrategyInput, context: StrategyContext): Promise<RetryDecision> {
@@ -341,14 +373,21 @@ export class ExponentialBackoffRetryStrategy implements Strategy<
     if (!Number.isInteger(input.attempt) || input.attempt < 1) {
       throw new StrategyConfigError('Retry attempt must be a positive integer.');
     }
+    const operation = config.operationOverrides[input.operation];
+    const maxAttempts = operation?.maxAttempts ?? config.maxAttempts;
     this.#evaluations += 1;
-    if (input.attempt >= config.maxAttempts) {
+    if (input.attempt >= maxAttempts) {
       this.#exhausted += 1;
-      return { retry: false, delayMs: 0 };
+      return {
+        action:
+          operation?.exhaustedAction ??
+          config.exhaustedAction ??
+          defaultExhaustedActions[input.operation],
+      };
     }
     this.#retries += 1;
     return {
-      retry: true,
+      action: 'retry',
       delayMs: Math.min(
         config.maxDelayMs,
         config.initialDelayMs * config.multiplier ** (input.attempt - 1),
@@ -362,6 +401,22 @@ export class ExponentialBackoffRetryStrategy implements Strategy<
       retries: this.#retries,
       exhausted: this.#exhausted,
     };
+  }
+}
+
+const retryOperations = ['model', 'tool', 'recovery'] as const satisfies readonly RetryOperation[];
+
+const defaultExhaustedActions: Readonly<
+  Record<RetryOperation, Exclude<RetryAction, 'retry'>>
+> = Object.freeze({
+  model: 'fail-turn',
+  tool: 'feed-back',
+  recovery: 'fail-turn',
+});
+
+function validateMaxAttempts(value: number, path: string): void {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new StrategyConfigError(`${path} must be a positive integer.`);
   }
 }
 

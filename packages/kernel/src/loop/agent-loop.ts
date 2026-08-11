@@ -153,7 +153,15 @@ const defaultSelections = {
   permission: { use: 'allow-all', config: undefined },
   retry: {
     use: 'exponential-backoff',
-    config: { maxAttempts: 1, initialDelayMs: 0 } satisfies ExponentialBackoffConfig,
+    config: {
+      maxAttempts: 1,
+      initialDelayMs: 0,
+      operationOverrides: {
+        tool: { maxAttempts: 2, exhaustedAction: 'feed-back' },
+        model: { maxAttempts: 2, exhaustedAction: 'fail-turn' },
+        recovery: { maxAttempts: 1, exhaustedAction: 'fail-turn' },
+      },
+    } satisfies ExponentialBackoffConfig,
   },
   checkpoint: { use: 'none', config: undefined },
 } as const;
@@ -676,8 +684,11 @@ export class AgentLoop {
           { attempt, operation: 'tool', error },
           this.#strategyContext(signal, turnId, stepId),
         );
-        if (!retry.retry) {
+        if (retry.action !== 'retry') {
           await this.#emitToolFailure(call.callId, stepId, attempt, error, signal);
+          if (retry.action === 'feed-back') {
+            return true;
+          }
           throw error;
         }
         await this.#sleep(retry.delayMs, signal);
@@ -968,7 +979,7 @@ export class AgentLoop {
       { attempt: 1, operation: 'recovery', error: unknown },
       this.#strategyContext(signal, turn.turnId, step.stepId),
     );
-    if (!retry.retry) {
+    if (retry.action !== 'retry') {
       await this.#emitToolFailure(call.callId, step.stepId, 1, unknown, signal);
       return;
     }

@@ -137,17 +137,45 @@ describe('built-in strategies', () => {
 
     await expect(
       strategy.apply({ attempt: 1, operation: 'tool', error: new Error('one') }, context),
-    ).resolves.toEqual({ retry: true, delayMs: 100 });
+    ).resolves.toEqual({ action: 'retry', delayMs: 100 });
     await expect(
       strategy.apply({ attempt: 2, operation: 'recovery', error: new Error('two') }, context),
-    ).resolves.toEqual({ retry: true, delayMs: 300 });
+    ).resolves.toEqual({ action: 'retry', delayMs: 300 });
     await expect(
       strategy.apply({ attempt: 3, operation: 'model', error: new Error('three') }, context),
-    ).resolves.toEqual({ retry: true, delayMs: 500 });
+    ).resolves.toEqual({ action: 'retry', delayMs: 500 });
     await expect(
       strategy.apply({ attempt: 4, operation: 'tool', error: new Error('four') }, context),
-    ).resolves.toEqual({ retry: false, delayMs: 0 });
+    ).resolves.toEqual({ action: 'feed-back' });
     expect(strategy.metrics()).toEqual({ evaluations: 4, retries: 3, exhausted: 1 });
+  });
+
+  it('selects exhausted actions and attempt budgets per operation', async () => {
+    const strategy = new ExponentialBackoffRetryStrategy();
+    await strategy.init(
+      {
+        maxAttempts: 2,
+        initialDelayMs: 0,
+        operationOverrides: {
+          model: { exhaustedAction: 'fail-turn' },
+          recovery: { maxAttempts: 1, exhaustedAction: 'feed-back' },
+        },
+      },
+      {},
+    );
+
+    await expect(
+      strategy.apply({ attempt: 1, operation: 'tool', error: null }, context),
+    ).resolves.toEqual({ action: 'retry', delayMs: 0 });
+    await expect(
+      strategy.apply({ attempt: 2, operation: 'tool', error: null }, context),
+    ).resolves.toEqual({ action: 'feed-back' });
+    await expect(
+      strategy.apply({ attempt: 2, operation: 'model', error: null }, context),
+    ).resolves.toEqual({ action: 'fail-turn' });
+    await expect(
+      strategy.apply({ attempt: 1, operation: 'recovery', error: null }, context),
+    ).resolves.toEqual({ action: 'feed-back' });
   });
 
   it('keeps checkpoint none replaceable and checks cancellation in every apply', async () => {

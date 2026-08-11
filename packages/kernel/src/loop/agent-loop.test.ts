@@ -357,6 +357,12 @@ describe('AgentLoop', () => {
     ]);
     const { loop, log } = createLoop(model, {
       tools: new ToolRegistry().register(new FailingTool(failure)),
+      strategies: {
+        retry: {
+          use: 'exponential-backoff',
+          config: { maxAttempts: 1, initialDelayMs: 0, exhaustedAction: 'fail-turn' },
+        },
+      },
     });
 
     await expect(loop.runTurn({ content: 'Fail.' })).rejects.toBe(failure);
@@ -368,6 +374,63 @@ describe('AgentLoop', () => {
       error: { name: 'Error', message: 'boom' },
     });
     await expectClosedAndSchemaValid(log, 'failed');
+  });
+
+  it('feeds back an exhausted execution failure so the model can choose another tool', async () => {
+    const failure = new Error('compiler unavailable');
+    const failing = new FailingTool(failure);
+    const echo = new EchoTool();
+    const model = new ScriptedModelPort([
+      [toolCall('call-compile-1', 'failing', null), { kind: 'finish', reason: 'tool-calls' }],
+      [toolCall('call-compile-2', 'failing', null), { kind: 'finish', reason: 'tool-calls' }],
+      [
+        toolCall('call-fallback', 'echo', { path: 'fallback' }),
+        { kind: 'finish', reason: 'tool-calls' },
+      ],
+      [
+        { kind: 'text', text: 'Completed with the fallback.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
+    const { loop, log } = createLoop(model, {
+      tools: new ToolRegistry().register(failing).register(echo),
+    });
+
+    const result = await loop.runTurn({ content: 'Complete the task.' });
+
+    expect(result.stopReason).toBe('completed');
+    expect(failing.requests.map((request) => request.attempt)).toEqual([1, 2, 1, 2]);
+    expect(echo.requests).toHaveLength(1);
+    expect(
+      result.events.filter(
+        (event) => event.type === 'tool.result' && event.outcome === 'failed',
+      ),
+    ).toEqual(
+      [
+        expect.objectContaining({ callId: 'call-compile-1', attempts: 2 }),
+        expect.objectContaining({ callId: 'call-compile-2', attempts: 2 }),
+      ],
+    );
+    expect(model.requests[2]?.messages).toContainEqual({
+      role: 'tool',
+      content: JSON.stringify({
+        error: { name: 'Error', message: 'compiler unavailable' },
+      }),
+      toolCallId: 'call-compile-2',
+    });
+    expect(result.events).toContainEqual({
+      type: 'tool.call',
+      seq: expect.any(Number),
+      tenantId: 'tenant-test',
+      sessionId: 'session-default',
+      ts: timestamp,
+      stepId: 'turn-0:step:3',
+      callId: 'call-fallback',
+      tool: 'echo',
+      args: { path: 'fallback' },
+      modelUsage: expect.any(Object),
+    });
+    await expectClosedAndSchemaValid(log, 'done');
   });
 
   it('feeds a completed failed result to the model without retrying or failing the turn', async () => {
