@@ -1,0 +1,14 @@
+{
+  "name": "@openagentcore/minimal-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@openagentcore/kernel": "workspace:*"
+  }
+}

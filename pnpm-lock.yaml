@@ -36,6 +36,12 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0))
 
+  examples/minimal-agent:
+    dependencies:
+      '@openagentcore/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+
   examples/replay-demo:
     dependencies:
       '@openagentcore/kernel':
