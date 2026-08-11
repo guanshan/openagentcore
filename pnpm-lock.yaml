@@ -42,6 +42,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kernel
 
+  examples/first-real-provider:
+    dependencies:
+      '@openagentcore/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@openagentcore/standard':
+        specifier: workspace:*
+        version: link:../../providers/standard
+
   examples/minimal-agent:
     dependencies:
       '@openagentcore/kernel':

@@ -1,0 +1,16 @@
+{
+  "name": "@openagentcore/first-real-provider",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "live": "pnpm run build && node dist/live.js",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@openagentcore/kernel": "workspace:*",
+    "@openagentcore/standard": "workspace:*"
+  }
+}
