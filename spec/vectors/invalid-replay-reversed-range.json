@@ -1,5 +1,9 @@
 {
   "description": "A reversed compaction range is rejected during replay.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-reversed-range"
+  },
   "expected": "replay-rejected",
   "events": [
     {

@@ -1,5 +1,9 @@
 {
   "description": "An empty event stream is valid.",
+  "stream": {
+    "tenantId": "tenant-empty",
+    "sessionId": "session-empty"
+  },
   "expected": "accepted",
   "events": []
 }

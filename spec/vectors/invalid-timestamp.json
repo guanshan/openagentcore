@@ -1,5 +1,9 @@
 {
   "description": "The common ts field must be an RFC 3339 date-time string.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-invalid-time"
+  },
   "expected": "schema-rejected",
   "events": [
     {

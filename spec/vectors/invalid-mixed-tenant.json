@@ -1,5 +1,9 @@
 {
   "description": "One EventLog cannot mix tenants.",
+  "stream": {
+    "tenantId": "tenant-a",
+    "sessionId": "session-mixed-tenant"
+  },
   "expected": "append-rejected",
   "events": [
     {

@@ -1,5 +1,9 @@
 {
   "description": "Every persisted event must contain the common tenantId field.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-missing-tenant"
+  },
   "expected": "schema-rejected",
   "events": [
     {

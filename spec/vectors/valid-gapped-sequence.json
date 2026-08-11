@@ -1,5 +1,9 @@
 {
   "description": "Sequence numbers may contain gaps when they remain strictly increasing.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-gapped"
+  },
   "expected": "accepted",
   "events": [
     {

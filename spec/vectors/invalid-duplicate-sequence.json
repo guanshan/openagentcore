@@ -1,5 +1,9 @@
 {
   "description": "A sequence number equal to the previous event is invalid.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-duplicate"
+  },
   "expected": "append-rejected",
   "events": [
     {

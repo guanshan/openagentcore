@@ -1,0 +1,19 @@
+{
+  "description": "The first event must match the explicitly declared stream identity.",
+  "stream": {
+    "tenantId": "tenant-declared",
+    "sessionId": "session-declared"
+  },
+  "expected": "append-rejected",
+  "events": [
+    {
+      "type": "turn.started",
+      "seq": 0,
+      "tenantId": "tenant-other",
+      "sessionId": "session-declared",
+      "ts": "2026-08-11T04:30:00Z",
+      "turnId": "turn-1",
+      "input": { "content": "Wrong stream identity." }
+    }
+  ]
+}

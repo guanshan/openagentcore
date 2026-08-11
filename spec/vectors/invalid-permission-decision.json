@@ -1,5 +1,9 @@
 {
   "description": "Permission decisions outside allow and deny are rejected.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-invalid-decision"
+  },
   "expected": "schema-rejected",
   "events": [
     {

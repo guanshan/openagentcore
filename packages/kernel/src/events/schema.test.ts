@@ -7,6 +7,7 @@ import * as formatsModule from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
 
 import { EventLogInvariantError, InMemoryEventLog } from './event-log.js';
+import type { EventStreamIdentity } from './event-log.js';
 import {
   materializeMessageHistory,
   projectMessageHistory,
@@ -23,6 +24,7 @@ type VectorExpectation = 'accepted' | 'schema-rejected' | 'append-rejected' | 'r
 interface SpecVector {
   readonly fileName: string;
   readonly description: string;
+  readonly stream: EventStreamIdentity;
   readonly expected: VectorExpectation;
   readonly events: readonly unknown[];
 }
@@ -55,11 +57,7 @@ describe('AgentEvent v0 schema', () => {
     }
 
     expect(schemaAccepted, JSON.stringify(validateEvent.errors)).toBe(true);
-    const firstEvent = vector.events[0] as AgentEvent | undefined;
-    const log = new InMemoryEventLog({
-      tenantId: firstEvent?.tenantId ?? 'tenant-empty',
-      sessionId: firstEvent?.sessionId ?? 'session-empty',
-    });
+    const log = new InMemoryEventLog(vector.stream);
 
     let appendError: unknown;
     try {
@@ -235,11 +233,26 @@ function isSpecVector(value: unknown): value is Omit<SpecVector, 'fileName'> {
   const candidate = value as Record<string, unknown>;
   return (
     typeof candidate['description'] === 'string' &&
+    isEventStreamIdentity(candidate['stream']) &&
     (candidate['expected'] === 'accepted' ||
       candidate['expected'] === 'schema-rejected' ||
       candidate['expected'] === 'append-rejected' ||
       candidate['expected'] === 'replay-rejected') &&
     Array.isArray(candidate['events'])
+  );
+}
+
+function isEventStreamIdentity(value: unknown): value is EventStreamIdentity {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate['tenantId'] === 'string' &&
+    candidate['tenantId'].length > 0 &&
+    typeof candidate['sessionId'] === 'string' &&
+    candidate['sessionId'].length > 0
   );
 }
 

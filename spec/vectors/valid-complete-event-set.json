@@ -1,5 +1,9 @@
 {
   "description": "A single-session stream containing every AgentEvent v0 variant is valid.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-complete"
+  },
   "expected": "accepted",
   "events": [
     {

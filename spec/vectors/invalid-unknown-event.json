@@ -1,5 +1,9 @@
 {
   "description": "Unknown event variants are rejected by AgentEvent v0.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-unknown"
+  },
   "expected": "schema-rejected",
   "events": [
     {

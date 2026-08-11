@@ -1,5 +1,9 @@
 {
   "description": "A compaction range that reaches a future sequence is rejected during replay.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-future-range"
+  },
   "expected": "replay-rejected",
   "events": [
     {

@@ -1,5 +1,9 @@
 {
   "description": "A sequence number lower than the previous event is invalid.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-order"
+  },
   "expected": "append-rejected",
   "events": [
     {

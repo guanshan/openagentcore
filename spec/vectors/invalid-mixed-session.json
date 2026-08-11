@@ -1,5 +1,9 @@
 {
   "description": "One EventLog cannot mix sessions.",
+  "stream": {
+    "tenantId": "tenant-demo",
+    "sessionId": "session-a"
+  },
   "expected": "append-rejected",
   "events": [
     {
