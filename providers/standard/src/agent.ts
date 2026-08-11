@@ -25,6 +25,7 @@ import {
   OpenAICompatibleModel,
   estimateTokensByCharacters,
 } from './model/openai-compatible.js';
+import { MAX_HTTP_TIMEOUT_MS } from './model/limits.js';
 
 export type AgentPreset = 'oss-local';
 
@@ -317,8 +318,36 @@ export class AgentBuilder {
     validateModelPort(model);
 
     const tools = new ToolRegistry();
-    for (const registration of this.#tools) {
-      tools.register(registration.tool, registration.options);
+    for (const [index, registration] of this.#tools.entries()) {
+      if (typeof registration.tool.name !== 'string' || registration.tool.name.length === 0) {
+        throw configurationError(
+          'explicit-code',
+          `tools[${index}].name`,
+          'expected a non-empty string.',
+        );
+      }
+      const groups = registration.options.groups;
+      if (
+        groups !== undefined &&
+        (!Array.isArray(groups) ||
+          groups.some((group) => typeof group !== 'string' || group.length === 0))
+      ) {
+        throw configurationError(
+          'explicit-code',
+          `tools[${index}].groups`,
+          'expected non-empty string group names.',
+        );
+      }
+      try {
+        tools.register(registration.tool, registration.options);
+      } catch (error) {
+        throw new AgentConfigurationError(
+          'explicit-code',
+          `tools[${index}].name`,
+          errorMessage(error),
+          { cause: error },
+        );
+      }
     }
 
     const prompts = createDefaultPromptRegistry();
@@ -456,8 +485,8 @@ function validatePartialConfiguration(
   rejectUnknownKeys(model, MODEL_KEYS, layer, 'model');
   validateOptionalUrl(model['baseUrl'], layer, 'model.baseUrl');
   validateOptionalNonEmptyString(model['name'], layer, 'model.name');
-  validateOptionalString(model['apiKey'], layer, 'model.apiKey');
-  validateOptionalPositiveInteger(model['timeoutMs'], layer, 'model.timeoutMs');
+  validateOptionalApiKey(model['apiKey'], layer, 'model.apiKey');
+  validateOptionalTimeout(model['timeoutMs'], layer, 'model.timeoutMs');
 
   const headersValue = model['headers'];
   if (headersValue !== undefined) {
@@ -706,7 +735,7 @@ function configurationFromEnvironment(environment: unknown): ConfigRecord {
         setConfigValue(config, ['model', 'apiKey'], value);
         break;
       case 'OAC_MODEL_TIMEOUT_MS':
-        setConfigValue(config, ['model', 'timeoutMs'], environmentPositiveInteger(value, name));
+        setConfigValue(config, ['model', 'timeoutMs'], environmentTimeout(value, name));
         break;
       case 'OAC_MODEL_STREAMING':
         setConfigValue(
@@ -771,6 +800,18 @@ function environmentPositiveInteger(value: string, variable: string): number {
       'environment',
       environmentKeyPath(variable),
       `expected ${variable} to contain a safe positive integer.`,
+    );
+  }
+  return parsed;
+}
+
+function environmentTimeout(value: string, variable: string): number {
+  const parsed = environmentPositiveInteger(value, variable);
+  if (parsed > MAX_HTTP_TIMEOUT_MS) {
+    throw configurationError(
+      'environment',
+      environmentKeyPath(variable),
+      `expected ${variable} to be at most ${MAX_HTTP_TIMEOUT_MS}.`,
     );
   }
   return parsed;
@@ -911,16 +952,41 @@ function validateOptionalNonEmptyString(
   }
 }
 
-function validateOptionalString(
+function validateOptionalApiKey(
   value: unknown,
   layer: AgentConfigurationLayer,
   keyPath: string,
 ): void {
   if (
     value !== undefined &&
-    (typeof value !== 'string' || (value.length > 0 && value.trim().length === 0))
+    (typeof value !== 'string' ||
+      (value.length > 0 && (value.trim().length === 0 || value !== value.trim())))
   ) {
-    throw configurationError(layer, keyPath, 'expected a string.');
+    throw configurationError(
+      layer,
+      keyPath,
+      'expected a string without leading or trailing space.',
+    );
+  }
+}
+
+function validateOptionalTimeout(
+  value: unknown,
+  layer: AgentConfigurationLayer,
+  keyPath: string,
+): void {
+  if (
+    value !== undefined &&
+    (typeof value !== 'number' ||
+      !Number.isSafeInteger(value) ||
+      value < 1 ||
+      value > MAX_HTTP_TIMEOUT_MS)
+  ) {
+    throw configurationError(
+      layer,
+      keyPath,
+      `expected an integer between 1 and ${MAX_HTTP_TIMEOUT_MS}.`,
+    );
   }
 }
 

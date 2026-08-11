@@ -127,10 +127,6 @@ export async function* parseServerSentEvents(
         yield event;
       }
     }
-    const finalEvent = acceptLine('');
-    if (finalEvent !== undefined) {
-      yield finalEvent;
-    }
   } finally {
     signal.removeEventListener('abort', onAbort);
     await reader.cancel().catch(() => undefined);

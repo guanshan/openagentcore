@@ -9,6 +9,7 @@ import {
   OpenAICompatibleConfigError,
   OpenAICompatibleModel,
 } from './openai-compatible.js';
+import { RecordingModelPort } from './recording.js';
 
 const noToolsRequest: ModelRequest = {
   messages: [{ role: 'user', content: 'hello' }],
@@ -56,6 +57,64 @@ describe('OpenAICompatibleModel', () => {
           capabilities: { maxContext: 0 },
         }),
     ).toThrow(OpenAICompatibleConfigError);
+    for (const timeoutMs of [1.5, 2_147_483_648]) {
+      expect(
+        () =>
+          new OpenAICompatibleModel({
+            baseUrl: 'http://127.0.0.1/v1',
+            model: 'demo',
+            capabilities: { maxContext: 1 },
+            timeoutMs,
+          }),
+      ).toThrow(/timeoutMs/);
+    }
+    expect(
+      () =>
+        new OpenAICompatibleModel({
+          baseUrl: 'http://127.0.0.1/v1',
+          model: 'demo',
+          capabilities: { maxContext: 1 },
+          headers: {
+            Authorization: 'Bearer old-secret',
+            authorization: 'Bearer new-secret',
+          },
+        }),
+    ).toThrow(/headers\.authorization/);
+    expect(
+      () =>
+        new OpenAICompatibleModel({
+          baseUrl: 'http://127.0.0.1/v1',
+          model: 'demo',
+          capabilities: { maxContext: 1 },
+          apiKey: '  padded-secret  ',
+        }),
+    ).toThrow(/apiKey/);
+    expect(
+      () =>
+        new OpenAICompatibleModel({
+          baseUrl: 'http://127.0.0.1/v1',
+          model: 'demo',
+          capabilities: { maxContext: 1 },
+          apiKey: 'new-secret',
+          headers: { Authorization: 'Bearer old-secret' },
+        }),
+    ).toThrow(/conflicts with apiKey/);
+    expect(
+      () =>
+        new OpenAICompatibleModel({
+          baseUrl: 'http://127.0.0.1/v1',
+          model: 'demo',
+          capabilities: { maxContext: 1, toolUse: 'invalid' } as never,
+        }),
+    ).toThrow(/capabilities\.toolUse/);
+    expect(
+      () =>
+        new OpenAICompatibleModel({
+          baseUrl: 'http://127.0.0.1/v1',
+          model: 'demo',
+          capabilities: { maxContext: 1, vision: 'yes' } as never,
+        }),
+    ).toThrow(/capabilities\.vision/);
 
     let credentialError: unknown;
     try {
@@ -218,8 +277,11 @@ describe('OpenAICompatibleModel', () => {
     {
       name: 'service failure',
       response: () =>
-        new Response(JSON.stringify({ error: { message: 'unavailable' } }), { status: 503 }),
-      expected: { kind: 'service', status: 503, retryable: true },
+        new Response(JSON.stringify({ error: { message: 'unavailable' } }), {
+          status: 503,
+          headers: { 'retry-after': '2' },
+        }),
+      expected: { kind: 'service', status: 503, retryable: true, retryAfterMs: 2_000 },
     },
     {
       name: 'content filter',
@@ -237,6 +299,26 @@ describe('OpenAICompatibleModel', () => {
     ).rejects.toMatchObject(expected);
   });
 
+  it('maps streamed invalid-request errors as non-retryable', async () => {
+    const model = createModel(async () =>
+      streamResponse(
+        sse([
+          JSON.stringify({
+            error: {
+              type: 'invalid_request_error',
+              code: 'context_length_exceeded',
+              message: 'context is too long',
+            },
+          }),
+        ]),
+      ),
+    );
+
+    await expect(
+      collect(model.stream(noToolsRequest, new AbortController().signal)),
+    ).rejects.toMatchObject({ kind: 'invalid-request', retryable: false });
+  });
+
   it('maps internal timeout and passes an aborting signal to fetch', async () => {
     let fetchSignal: AbortSignal | undefined;
     const fetchMock: typeof globalThis.fetch = async (_input, init) => {
@@ -251,6 +333,67 @@ describe('OpenAICompatibleModel', () => {
       collect(model.stream(noToolsRequest, new AbortController().signal)),
     ).rejects.toMatchObject({ kind: 'timeout', retryable: true });
     expect(fetchSignal?.aborted).toBe(true);
+  });
+
+  it('redacts configured credentials before provider errors reach a recording', async () => {
+    const apiKey = 'sk-API-SENTINEL';
+    const authorization = 'Bearer AUTH-SENTINEL';
+    const customApiKey = 'CUSTOM-API-SENTINEL';
+    const apiKeyModel = new OpenAICompatibleModel({
+      baseUrl: 'http://127.0.0.1/v1',
+      model: 'demo',
+      apiKey,
+      capabilities: { maxContext: 4_096 },
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: `invalid_${apiKey}`,
+              message: `Incorrect API key provided: ${apiKey}.`,
+            },
+          }),
+          { status: 401 },
+        ),
+    });
+    const apiKeyRecorder = new RecordingModelPort(apiKeyModel);
+
+    await expect(
+      collect(apiKeyRecorder.stream(noToolsRequest, new AbortController().signal)),
+    ).rejects.toMatchObject({ kind: 'authentication', retryable: false });
+
+    const headerModel = new OpenAICompatibleModel({
+      baseUrl: 'http://127.0.0.1/v1',
+      model: 'demo',
+      headers: {
+        Authorization: `  ${authorization}  `,
+        apikey: `  ${customApiKey}  `,
+      },
+      capabilities: { maxContext: 4_096 },
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'invalid_api_key',
+              message: `Headers were ${authorization} and ${customApiKey}.`,
+            },
+          }),
+          { status: 401 },
+        ),
+    });
+    const headerRecorder = new RecordingModelPort(headerModel);
+    await expect(
+      collect(headerRecorder.stream(noToolsRequest, new AbortController().signal)),
+    ).rejects.toMatchObject({ kind: 'authentication', retryable: false });
+
+    for (const serialized of [
+      JSON.stringify(apiKeyRecorder.snapshot()),
+      JSON.stringify(headerRecorder.snapshot()),
+    ]) {
+      expect(serialized).toContain('[REDACTED]');
+      expect(serialized).not.toContain(apiKey);
+      expect(serialized).not.toContain('AUTH-SENTINEL');
+      expect(serialized).not.toContain(customApiKey);
+    }
   });
 
   it('propagates caller cancellation and aborts the in-flight fetch', async () => {
@@ -384,6 +527,20 @@ describe('OpenAICompatibleModel', () => {
       kind: 'protocol',
       retryable: false,
     } satisfies Partial<ModelPortError>);
+
+    const truncatedDone = createModel(async () =>
+      streamResponse(`${sse([chunk({ choices: [choice({}, 'stop')] })])}data: [DONE]\n`),
+    );
+    await expect(
+      collect(truncatedDone.stream(noToolsRequest, new AbortController().signal)),
+    ).rejects.toMatchObject({ kind: 'protocol', retryable: false });
+
+    const emptyToolCalls = createModel(async () =>
+      streamResponse(sse([chunk({ choices: [choice({}, 'tool_calls')] }), '[DONE]'])),
+    );
+    await expect(
+      collect(emptyToolCalls.stream(noToolsRequest, new AbortController().signal)),
+    ).rejects.toMatchObject({ kind: 'protocol', retryable: false });
   });
 });
 

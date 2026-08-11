@@ -15,9 +15,13 @@ import {
 } from '@openagentcore/kernel';
 
 import { parseServerSentEvents } from './sse.js';
+import { MAX_HTTP_TIMEOUT_MS } from './limits.js';
+import { authorizationCredential, MODEL_SENSITIVE_KEYS } from './sensitive.js';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_CHAT_COMPLETIONS_PATH = 'chat/completions';
+const REDACTED_CREDENTIAL = '[REDACTED]';
+const SENSITIVE_HEADER_NAMES = new Set<string>(MODEL_SENSITIVE_KEYS);
 
 export type EstimatedTokenCounter = (
   request: ModelRequest,
@@ -65,17 +69,12 @@ export class OpenAICompatibleModel implements ModelPort {
   readonly #requestBody: JsonObject;
   readonly #tokenCounter: EstimatedTokenCounter;
   readonly #fetch: typeof globalThis.fetch;
+  readonly #sensitiveValues: readonly string[];
 
   constructor(options: OpenAICompatibleModelOptions) {
     this.#url = chatCompletionsUrl(options.baseUrl);
     this.#model = requireNonEmptyString(options.model, 'model');
-    validateMaxContext(options.capabilities.maxContext);
-    if (options.capabilities.streaming === false) {
-      throw new OpenAICompatibleConfigError(
-        'capabilities.streaming',
-        'must be true because this adapter uses the streaming Chat Completions protocol.',
-      );
-    }
+    validateCapabilities(options.capabilities);
     this.capabilities = Object.freeze({
       streaming: true,
       toolUse: 'prompted',
@@ -85,11 +84,28 @@ export class OpenAICompatibleModel implements ModelPort {
       ...options.capabilities,
       maxContext: options.capabilities.maxContext,
     });
-    this.#apiKey = optionalNonEmptyString(options.apiKey, 'apiKey');
-    this.#headers = Object.freeze({ ...(options.headers ?? {}) });
+    this.#apiKey = optionalApiKey(options.apiKey);
+    this.#headers = Object.freeze(validateHeaders(options.headers));
+    const authorizationName = Object.keys(this.#headers).find(
+      (name) => name.toLowerCase() === 'authorization',
+    );
+    if (this.#apiKey !== undefined && authorizationName !== undefined) {
+      throw new OpenAICompatibleConfigError(
+        `headers.${authorizationName}`,
+        'conflicts with apiKey.',
+      );
+    }
+    this.#sensitiveValues = Object.freeze(configuredSensitiveValues(this.#apiKey, this.#headers));
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    if (!Number.isFinite(this.#timeoutMs) || this.#timeoutMs <= 0) {
-      throw new OpenAICompatibleConfigError('timeoutMs', 'must be a positive finite number.');
+    if (
+      !Number.isSafeInteger(this.#timeoutMs) ||
+      this.#timeoutMs <= 0 ||
+      this.#timeoutMs > MAX_HTTP_TIMEOUT_MS
+    ) {
+      throw new OpenAICompatibleConfigError(
+        'timeoutMs',
+        `must be an integer between 1 and ${MAX_HTTP_TIMEOUT_MS}.`,
+      );
     }
     this.#includeUsage = options.includeUsage ?? true;
     this.#requestBody = structuredClone(options.requestBody ?? {});
@@ -140,7 +156,7 @@ export class OpenAICompatibleModel implements ModelPort {
         signal: control.signal,
       });
       if (!response.ok) {
-        throw await httpResponseError(response);
+        throw await httpResponseError(response, this.#sensitiveValues);
       }
       const contentType = response.headers.get('content-type');
       if (contentType !== null && !contentType.toLowerCase().includes('text/event-stream')) {
@@ -160,7 +176,12 @@ export class OpenAICompatibleModel implements ModelPort {
         const payload = parsePayload(event.data);
         const streamedError = payload['error'];
         if (streamedError !== undefined && streamedError !== null) {
-          throw errorPayloadToModelError(streamedError);
+          throw errorPayloadToModelError(
+            streamedError,
+            undefined,
+            undefined,
+            this.#sensitiveValues,
+          );
         }
 
         const choices = payload['choices'];
@@ -189,6 +210,11 @@ export class OpenAICompatibleModel implements ModelPort {
           if (parsed.finishReason !== undefined) {
             finishReason = parsed.finishReason;
             if (finishReason === 'tool-calls') {
+              if (toolCalls.size === 0) {
+                throw protocolError(
+                  'Model finished with tool_calls without emitting any tool-call fragments.',
+                );
+              }
               for (const call of completeToolCalls(toolCalls)) {
                 yield call;
               }
@@ -359,12 +385,102 @@ function optionalNonEmptyString(value: string | undefined, path: string): string
   return value === undefined ? undefined : requireNonEmptyString(value, path);
 }
 
+function optionalApiKey(value: string | undefined): string | undefined {
+  const apiKey = optionalNonEmptyString(value, 'apiKey');
+  if (apiKey !== undefined && apiKey !== apiKey.trim()) {
+    throw new OpenAICompatibleConfigError('apiKey', 'must not contain leading or trailing space.');
+  }
+  return apiKey;
+}
+
+function validateHeaders(
+  candidate: Readonly<Record<string, string>> | undefined,
+): Readonly<Record<string, string>> {
+  if (candidate === undefined) {
+    return {};
+  }
+  if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+    throw new OpenAICompatibleConfigError('headers', 'must be an object of string values.');
+  }
+  const headers: Record<string, string> = {};
+  const normalizedNames = new Set<string>();
+  for (const [name, value] of Object.entries(candidate)) {
+    const path = name.length === 0 ? 'headers' : `headers.${name}`;
+    if (typeof value !== 'string') {
+      throw new OpenAICompatibleConfigError(path, 'must be a string.');
+    }
+    const normalizedName = name.toLowerCase();
+    if (normalizedNames.has(normalizedName)) {
+      throw new OpenAICompatibleConfigError(
+        path,
+        'duplicates another header name when compared case-insensitively.',
+      );
+    }
+    let normalizedValue: string | null;
+    try {
+      normalizedValue = new Headers([[name, value]]).get(name);
+    } catch {
+      throw new OpenAICompatibleConfigError(path, 'must be a valid HTTP header.');
+    }
+    if (normalizedValue === null) {
+      throw new OpenAICompatibleConfigError(path, 'must be a valid HTTP header.');
+    }
+    normalizedNames.add(normalizedName);
+    headers[name] = normalizedValue;
+  }
+  return headers;
+}
+
 function validateMaxContext(value: number): void {
   if (!Number.isSafeInteger(value) || value < 1) {
     throw new OpenAICompatibleConfigError(
       'capabilities.maxContext',
       'must be a positive safe integer.',
     );
+  }
+}
+
+function validateCapabilities(
+  candidate: unknown,
+): asserts candidate is OpenAICompatibleCapabilities {
+  if (!isUnknownObject(candidate)) {
+    throw new OpenAICompatibleConfigError('capabilities', 'must be an object.');
+  }
+  const allowed = new Set([
+    'streaming',
+    'toolUse',
+    'promptCaching',
+    'structuredOutput',
+    'maxContext',
+    'vision',
+  ]);
+  for (const key of Object.keys(candidate)) {
+    if (!allowed.has(key)) {
+      throw new OpenAICompatibleConfigError(`capabilities.${key}`, 'is not supported.');
+    }
+  }
+  validateMaxContext(candidate['maxContext'] as number);
+  if (candidate['streaming'] !== undefined && candidate['streaming'] !== true) {
+    throw new OpenAICompatibleConfigError(
+      'capabilities.streaming',
+      'must be true because this adapter uses the streaming Chat Completions protocol.',
+    );
+  }
+  if (
+    candidate['toolUse'] !== undefined &&
+    candidate['toolUse'] !== 'native' &&
+    candidate['toolUse'] !== 'prompted' &&
+    candidate['toolUse'] !== 'none'
+  ) {
+    throw new OpenAICompatibleConfigError(
+      'capabilities.toolUse',
+      'must be native, prompted, or none.',
+    );
+  }
+  for (const key of ['promptCaching', 'structuredOutput', 'vision']) {
+    if (candidate[key] !== undefined && typeof candidate[key] !== 'boolean') {
+      throw new OpenAICompatibleConfigError(`capabilities.${key}`, 'must be a boolean.');
+    }
   }
 }
 
@@ -604,7 +720,10 @@ function requireTokenCount(value: unknown, path: string): number {
   return value as number;
 }
 
-async function httpResponseError(response: Response): Promise<ModelPortError> {
+async function httpResponseError(
+  response: Response,
+  sensitiveValues: readonly string[],
+): Promise<ModelPortError> {
   let text = '';
   try {
     text = await response.text();
@@ -617,26 +736,29 @@ async function httpResponseError(response: Response): Promise<ModelPortError> {
   } catch {
     // Plain-text error bodies are used as the message below.
   }
-  return errorPayloadToModelError(payload, response.status, response.headers);
+  return errorPayloadToModelError(payload, response.status, response.headers, sensitiveValues);
 }
 
 function errorPayloadToModelError(
   payload: unknown,
   status?: number,
   headers?: Headers,
+  sensitiveValues: readonly string[] = [],
 ): ModelPortError {
   const error =
     isUnknownObject(payload) && payload['error'] !== undefined ? payload['error'] : payload;
   const errorObject = isUnknownObject(error) ? error : undefined;
-  const code = stringValue(errorObject?.['code']) ?? stringValue(errorObject?.['type']);
-  const message =
+  const rawCode = stringValue(errorObject?.['code']) ?? stringValue(errorObject?.['type']);
+  const rawMessage =
     stringValue(errorObject?.['message']) ??
     (typeof error === 'string' && error.length > 0
       ? error.slice(0, 1_000)
       : status === undefined
         ? 'Model stream reported an error.'
         : `Model endpoint returned HTTP ${status}.`);
-  const normalized = code?.toLowerCase().replaceAll('-', '_') ?? '';
+  const code = rawCode === undefined ? undefined : redactSensitiveValues(rawCode, sensitiveValues);
+  const message = redactSensitiveValues(rawMessage, sensitiveValues);
+  const normalized = rawCode?.toLowerCase().replaceAll('-', '_') ?? '';
   const options = (retryable: boolean) => ({
     retryable,
     ...(status === undefined ? {} : { status }),
@@ -664,10 +786,54 @@ function errorPayloadToModelError(
   if (status === 408 || normalized.includes('timeout')) {
     return new ModelPortError('timeout', message, options(true));
   }
+  if (
+    normalized.includes('invalid_request') ||
+    normalized.includes('bad_request') ||
+    normalized.includes('context_length')
+  ) {
+    return new ModelPortError('invalid-request', message, options(false));
+  }
   if (status === undefined || status >= 500 || normalized.includes('server_error')) {
-    return new ModelPortError('service', message, options(true));
+    const retryAfterMs = parseRetryAfter(headers?.get('retry-after'));
+    return new ModelPortError('service', message, {
+      ...options(true),
+      ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+    });
   }
   return new ModelPortError('invalid-request', message, options(false));
+}
+
+function configuredSensitiveValues(
+  apiKey: string | undefined,
+  headers: Readonly<Record<string, string>>,
+): string[] {
+  const values = new Set<string>();
+  if (apiKey !== undefined) {
+    values.add(apiKey);
+  }
+  for (const [name, value] of Object.entries(headers)) {
+    if (!SENSITIVE_HEADER_NAMES.has(name.toLowerCase()) || value.length === 0) {
+      continue;
+    }
+    values.add(value);
+    if (name.toLowerCase().includes('authorization')) {
+      const credential = authorizationCredential(value);
+      if (credential !== undefined && credential.length > 0) {
+        values.add(credential);
+      }
+    }
+  }
+  return [...values]
+    .filter((value) => value.length > 0)
+    .sort((left, right) => right.length - left.length);
+}
+
+function redactSensitiveValues(value: string, sensitiveValues: readonly string[]): string {
+  let redacted = value;
+  for (const sensitive of sensitiveValues) {
+    redacted = redacted.split(sensitive).join(REDACTED_CREDENTIAL);
+  }
+  return redacted;
 }
 
 function parseRetryAfter(value: string | null | undefined): number | undefined {
@@ -676,7 +842,8 @@ function parseRetryAfter(value: string | null | undefined): number | undefined {
   }
   const seconds = Number(value);
   if (Number.isFinite(seconds) && seconds >= 0) {
-    return Math.ceil(seconds * 1_000);
+    const milliseconds = Math.ceil(seconds * 1_000);
+    return Number.isFinite(milliseconds) ? milliseconds : undefined;
   }
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) {

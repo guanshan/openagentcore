@@ -183,6 +183,21 @@ describe('AgentBuilder', () => {
       layer: 'explicit-code',
       keyPath: 'model.apiKey',
     });
+
+    const timeoutOverflowError = captureConfigurationError(() =>
+      AgentBuilder.fromPreset('oss-local')
+        .environment({
+          OAC_MODEL_NAME: 'local-model',
+          OAC_MODEL_MAX_CONTEXT: '4096',
+          OAC_MODEL_TIMEOUT_MS: '2147483648',
+        })
+        .model(new ScriptedModelPort([]))
+        .build(),
+    );
+    expect(timeoutOverflowError).toMatchObject({
+      layer: 'environment',
+      keyPath: 'model.timeoutMs',
+    });
   });
 
   it('merges authorization case-insensitively and honors layer priority', async () => {
@@ -311,6 +326,31 @@ describe('AgentBuilder', () => {
     expect(result.events.some((event) => event.type === 'tool.result')).toBe(true);
     expect(result.stopReason).toBe('completed');
     expect(eventMiddlewareCalls).toBe(result.events.length);
+  });
+
+  it('maps Tool registration failures to explicit-code paths', () => {
+    const duplicate = captureConfigurationError(() =>
+      AgentBuilder.fromPreset('oss-local')
+        .model(new ScriptedModelPort([]))
+        .tool(new EchoTool())
+        .tool(new EchoTool())
+        .build(),
+    );
+    expect(duplicate).toMatchObject({
+      layer: 'explicit-code',
+      keyPath: 'tools[1].name',
+    });
+
+    const emptyGroup = captureConfigurationError(() =>
+      AgentBuilder.fromPreset('oss-local')
+        .model(new ScriptedModelPort([]))
+        .tool(new EchoTool(), { groups: [''] })
+        .build(),
+    );
+    expect(emptyGroup).toMatchObject({
+      layer: 'explicit-code',
+      keyPath: 'tools[0].groups',
+    });
   });
 });
 

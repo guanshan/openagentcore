@@ -42,6 +42,20 @@ describe('parseServerSentEvents', () => {
     await expect(pending).rejects.toBe(reason);
     expect(cancelledWith).toBe(reason);
   });
+
+  it('discards pending data when EOF arrives before the terminating empty line', async () => {
+    const bytes = new TextEncoder().encode('data: [DONE]\n');
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+
+    await expect(
+      collect(parseServerSentEvents(body, new AbortController().signal)),
+    ).resolves.toEqual([]);
+  });
 });
 
 async function collect<TValue>(values: AsyncIterable<TValue>): Promise<TValue[]> {
