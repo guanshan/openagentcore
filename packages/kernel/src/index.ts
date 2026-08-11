@@ -1,8 +1,13 @@
-export { EventLogInvariantError, InMemoryEventLog } from './events/event-log.js';
+export {
+  EventLogConflictError,
+  EventLogInvariantError,
+  InMemoryEventLog,
+} from './events/event-log.js';
 export type {
   EventLog,
   EventStreamIdentity,
   EventSubscriber,
+  SubscriberErrorHandler,
   Unsubscribe,
 } from './events/event-log.js';
 

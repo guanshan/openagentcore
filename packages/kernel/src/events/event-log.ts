@@ -7,12 +7,28 @@ export interface EventStreamIdentity {
 
 export type EventSubscriber = (event: AgentEvent) => void;
 
+export type SubscriberErrorHandler = (error: unknown, event: AgentEvent) => void;
+
 export type Unsubscribe = () => void;
 
 export interface EventLog extends EventStreamIdentity {
-  append(event: AgentEvent): Promise<void>;
+  /**
+   * Appends an event after atomically comparing the current head when expectedLastSeq is supplied.
+   * The head of an empty stream is -1; omitting expectedLastSeq performs an unconditional append.
+   */
+  append(event: AgentEvent, expectedLastSeq?: number): Promise<void>;
+
+  /**
+   * Returns a repeatable, finite snapshot whose inclusive cursor is fromSeq.
+   * Distributed consumers persist a seq cursor and retry reads to achieve at-least-once delivery.
+   */
   read(fromSeq: number): AsyncIterable<AgentEvent>;
-  subscribe(subscriber: EventSubscriber): Unsubscribe;
+
+  /**
+   * Registers a process-local convenience subscriber for future successful appends.
+   * This does not provide cross-process delivery; subscriber failures are isolated from append.
+   */
+  subscribe(subscriber: EventSubscriber, onSubscriberError?: SubscriberErrorHandler): Unsubscribe;
 }
 
 export class EventLogInvariantError extends Error {
@@ -22,12 +38,26 @@ export class EventLogInvariantError extends Error {
   }
 }
 
+export class EventLogConflictError extends Error {
+  readonly expectedLastSeq: number;
+  readonly actualLastSeq: number;
+
+  constructor(expectedLastSeq: number, actualLastSeq: number) {
+    super(
+      `EventLog head conflict: expected last seq ${expectedLastSeq}, actual last seq ${actualLastSeq}.`,
+    );
+    this.name = 'EventLogConflictError';
+    this.expectedLastSeq = expectedLastSeq;
+    this.actualLastSeq = actualLastSeq;
+  }
+}
+
 export class InMemoryEventLog implements EventLog {
   readonly tenantId: string;
   readonly sessionId: string;
 
   readonly #events: AgentEvent[] = [];
-  readonly #subscribers = new Set<EventSubscriber>();
+  readonly #subscribers = new Map<EventSubscriber, SubscriberErrorHandler | undefined>();
 
   constructor(identity: EventStreamIdentity) {
     if (identity.tenantId.length === 0 || identity.sessionId.length === 0) {
@@ -38,7 +68,7 @@ export class InMemoryEventLog implements EventLog {
     this.sessionId = identity.sessionId;
   }
 
-  async append(event: AgentEvent): Promise<void> {
+  async append(event: AgentEvent, expectedLastSeq?: number): Promise<void> {
     if (event.tenantId !== this.tenantId || event.sessionId !== this.sessionId) {
       throw new EventLogInvariantError(
         `Event identity ${event.tenantId}/${event.sessionId} does not match log identity ${this.tenantId}/${this.sessionId}.`,
@@ -51,7 +81,21 @@ export class InMemoryEventLog implements EventLog {
       );
     }
 
+    if (
+      expectedLastSeq !== undefined &&
+      (!Number.isInteger(expectedLastSeq) || expectedLastSeq < -1)
+    ) {
+      throw new EventLogInvariantError(
+        `expectedLastSeq must be an integer greater than or equal to -1; received ${expectedLastSeq}.`,
+      );
+    }
+
     const previous = this.#events.at(-1);
+    const actualLastSeq = previous?.seq ?? -1;
+    if (expectedLastSeq !== undefined && expectedLastSeq !== actualLastSeq) {
+      throw new EventLogConflictError(expectedLastSeq, actualLastSeq);
+    }
+
     if (previous !== undefined && event.seq <= previous.seq) {
       throw new EventLogInvariantError(
         `Event seq must be strictly increasing; received ${event.seq} after ${previous.seq}.`,
@@ -60,11 +104,15 @@ export class InMemoryEventLog implements EventLog {
 
     const storedEvent = structuredClone(event);
     this.#events.push(storedEvent);
-    for (const subscriber of this.#subscribers) {
+    for (const [subscriber, onSubscriberError] of this.#subscribers) {
       try {
         subscriber(structuredClone(storedEvent));
-      } catch {
-        continue;
+      } catch (error) {
+        try {
+          onSubscriberError?.(error, structuredClone(storedEvent));
+        } catch {
+          // Error reporting is best-effort and must not affect append or other subscribers.
+        }
       }
     }
   }
@@ -79,13 +127,17 @@ export class InMemoryEventLog implements EventLog {
     const snapshot = this.#events
       .filter((event) => event.seq >= fromSeq)
       .map((event) => structuredClone(event));
-    return (async function* readSnapshot() {
-      yield* snapshot;
-    })();
+    return {
+      async *[Symbol.asyncIterator]() {
+        for (const event of snapshot) {
+          yield structuredClone(event);
+        }
+      },
+    };
   }
 
-  subscribe(subscriber: EventSubscriber): Unsubscribe {
-    this.#subscribers.add(subscriber);
+  subscribe(subscriber: EventSubscriber, onSubscriberError?: SubscriberErrorHandler): Unsubscribe {
+    this.#subscribers.set(subscriber, onSubscriberError);
     let subscribed = true;
 
     return () => {

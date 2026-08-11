@@ -26,7 +26,9 @@
 
 `tenantId` 对应 design.md §10 的持久化租户身份要求。L0 JSON 字段沿用 `sessionId`、`turnId` 等字段的 camelCase 约定；数据库列名不属于本协议。
 
-单个 EventLog 表示一个租户下的单个 Session。流内 `seq` 必须严格递增，但允许跳号；`read(fromSeq)` 的起点包含 `fromSeq`。JSON Schema 只校验单个事件的结构，跨事件的租户、会话和顺序不变量由实现及一致性测试向量校验。
+单个 EventLog 表示一个租户下的单个 Session。流内 `seq` 必须严格递增，但允许跳号；`read(fromSeq)` 的起点包含 `fromSeq`，返回可重复迭代的有限快照。`append(event, expectedLastSeq?)` 可用当前流头做原子乐观并发检查，空流的流头是 `-1`，不匹配时不得写入。JSON Schema 只校验单个事件的结构，跨事件的租户、会话和顺序不变量由实现及一致性测试向量校验。
+
+`subscribe` 只是在单进程内观察未来 append 的便利机制，不承诺跨进程投递。分布式消费者应持久化 `seq` 游标，通过 `read` 重试并按至少一次语义处理事件；跨副本 seq 分配、租约或单写者策略留待 Store provider 设计。
 
 本代际对 design.md §4.1 中尚未展开的类型采用以下最小定义：
 

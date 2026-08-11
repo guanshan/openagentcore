@@ -41,6 +41,34 @@ describe('InMemoryEventLog', () => {
     await expect(collect(log.read(2))).resolves.toEqual([turnStarted(2), turnStarted(5)]);
   });
 
+  it('allows the same finite read snapshot to be iterated more than once', async () => {
+    const log = new InMemoryEventLog(identity);
+    await log.append(turnStarted(0));
+    await log.append(turnStarted(2));
+    const snapshot = log.read(0);
+
+    await expect(collect(snapshot)).resolves.toEqual([turnStarted(0), turnStarted(2)]);
+    await expect(collect(snapshot)).resolves.toEqual([turnStarted(0), turnStarted(2)]);
+  });
+
+  it('rejects a stale expectedLastSeq without appending or notifying subscribers', async () => {
+    const log = new InMemoryEventLog(identity);
+    await log.append(turnStarted(0), -1);
+    const subscriber = vi.fn();
+    log.subscribe(subscriber);
+
+    await expect(log.append(turnStarted(1), -1)).rejects.toMatchObject({
+      name: 'EventLogConflictError',
+      expectedLastSeq: -1,
+      actualLastSeq: 0,
+    });
+    await expect(collect(log.read(0))).resolves.toEqual([turnStarted(0)]);
+    expect(subscriber).not.toHaveBeenCalled();
+
+    await expect(log.append(turnStarted(1), 0)).resolves.toBeUndefined();
+    expect(subscriber).toHaveBeenCalledWith(turnStarted(1));
+  });
+
   it('rejects repeated and decreasing sequence numbers without appending them', async () => {
     const log = new InMemoryEventLog(identity);
     await log.append(turnStarted(3));
@@ -111,6 +139,23 @@ describe('InMemoryEventLog', () => {
 
     await expect(collect(log.read(0))).resolves.toEqual([turnStarted(0)]);
     expect(secondSubscriber).toHaveBeenCalledWith(turnStarted(0));
+  });
+
+  it('reports subscriber failures without interrupting append delivery', async () => {
+    const log = new InMemoryEventLog(identity);
+    const subscriberError = new Error('subscriber failed');
+    const onSubscriberError = vi.fn();
+    const secondSubscriber = vi.fn();
+    log.subscribe(() => {
+      throw subscriberError;
+    }, onSubscriberError);
+    log.subscribe(secondSubscriber);
+
+    await expect(log.append(turnStarted(0))).resolves.toBeUndefined();
+
+    expect(onSubscriberError).toHaveBeenCalledWith(subscriberError, turnStarted(0));
+    expect(secondSubscriber).toHaveBeenCalledWith(turnStarted(0));
+    await expect(collect(log.read(0))).resolves.toEqual([turnStarted(0)]);
   });
 
   it('rejects invalid sequence inputs at the log boundary', async () => {
