@@ -2,3 +2,4 @@
 **/dist/**
 **/node_modules/**
 pnpm-lock.yaml
+packages/kernel/src/boundary-self-test-probe.ts
