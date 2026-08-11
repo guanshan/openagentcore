@@ -49,12 +49,12 @@
 AgentLoop 事件使用以下关联与记账字段：
 
 - `step.started` 必须包含 `turnId`、`stepId`、从 1 开始的 `stepIndex`，以及本步消费的 `injectedInputs`。`injectedInputs` 是可为空的 `UserInput` 数组；每一项都进入消息历史投影，使 Steering 可以在恢复后重建。
-- `step.finished` 必须与活动 step 匹配，并包含 `outcome` 与 `usage`。`outcome` 为 `succeeded`、`failed` 或 `aborted`。
+- `step.finished` 必须与活动 step 匹配，并包含 `outcome` 与 `usage`。`outcome` 为 `succeeded`、`failed` 或 `aborted`。`succeeded` 表示 step 的控制流程完整结束，不表示其中每个工具的业务结果都成功。
 - `usage` 必须包含非负整数 `inputTokens`、`outputTokens` 与 `totalTokens`；可选 `cost` 使用非负 `amount` 和非空 `currency`。`turn.finished.usage` 是各步用量的累计值。
 - `model.request.toolUse` 记录实际采用的工具调用模式。值为 `prompted` 时表示已使用文本协议降级；`capabilityDowngrades` 记录可读的降级说明。
 - `requestId`、工具与审批事件上的 `stepId` / `callId` 用于跨事件关联。它们对 M0-1 数据保持可选，M0-2 AgentLoop 产生的新事件应完整填写。
 - `tool.call.modelUsage` 在工具副作用前复制已完成模型调用的用量。恢复流程用它补写 `step.finished.usage`；旧事件可不包含该字段。
-- `tool.result.outcome` 为 `succeeded`、`failed` 或 `denied`；`attempts` 从 1 开始。既有 `result` 字段保持必填和开放 JSON 值，以便读取 M0-1 数据。
+- `tool.result.outcome` 为 `succeeded`、`failed` 或 `denied`；`attempts` 从 1 开始。既有 `result` 字段保持必填和开放 JSON 值，以便读取 M0-1 数据。`failed` 且不含 `error` 表示工具正常完成后的结果失败；同时包含 `error` 表示工具执行失败。
 
 ### AgentLoop replay 不变量
 
