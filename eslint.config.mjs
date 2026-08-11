@@ -11,18 +11,17 @@ export default tseslint.config(
     files: ['**/*.ts'],
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',
+    },
+  },
+  {
+    files: ['packages/kernel/**/*.ts'],
+    rules: {
       'no-restricted-imports': [
         'error',
         {
           patterns: [
             {
-              group: [
-                '@openagentcore/coding',
-                '@openagentcore/runtime',
-                '@openagentcore/ui',
-                '@openagentcore/cli',
-                '@openagentcore/*/*',
-              ],
+              group: ['@openagentcore/*', '@openagentcore/*/*'],
               message: 'Kernel must not import another workspace package.',
             },
           ],

@@ -2,7 +2,16 @@ import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
 const ignoredDirectories = new Set(['.git', 'coverage', 'dist', 'node_modules']);
-const forbiddenDirectories = new Set(['common', 'helpers', 'shared', 'utils']);
+const forbiddenDirectories = new Set([
+  'base',
+  'common',
+  'factories',
+  'helpers',
+  'impl',
+  'shared',
+  'tests',
+  'utils',
+]);
 const violations = [];
 
 async function visit(directory) {
