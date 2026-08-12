@@ -61,6 +61,8 @@ export interface SandboxPort {
   exec(request: SandboxExecRequest, signal: AbortSignal): Promise<SandboxExecResult>;
   snapshot?(signal: AbortSignal): Promise<SandboxSnapshot>;
   restore?(snapshot: SandboxSnapshot, signal: AbortSignal): Promise<void>;
+  /** Releases provider-owned resources. Local implementations may use a no-op. */
+  close?(): Promise<void>;
 }
 
 export class SandboxContractError extends Error {
@@ -157,6 +159,8 @@ export class LocalProcessSandbox implements SandboxPort {
       signal,
     );
   }
+
+  async close(): Promise<void> {}
 
   async #readFile(path: string, signal: AbortSignal): Promise<Uint8Array> {
     signal.throwIfAborted();
