@@ -24,7 +24,8 @@
       "@openagentcore/coding": ["packages/coding/src/index.ts"],
       "@openagentcore/standard": ["providers/standard/src/index.ts"],
       "@openagentcore/standard/model": ["providers/standard/src/model/index.ts"],
-      "@openagentcore/standard/sandbox": ["providers/standard/src/sandbox/index.ts"]
+      "@openagentcore/standard/sandbox": ["providers/standard/src/sandbox/index.ts"],
+      "@openagentcore/standard/store": ["providers/standard/src/store/index.ts"]
     }
   }
 }

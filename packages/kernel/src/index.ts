@@ -118,6 +118,15 @@ export type {
   SandboxSnapshot,
 } from './ports/sandbox.js';
 export type {
+  EventLogPort,
+  KvPort,
+  StoreCapabilities,
+  StoreDurability,
+  StorePort,
+  StoreReadConsistency,
+  StoreSequenceSemantics,
+} from './ports/store.js';
+export type {
   FinishModelChunk,
   ModelCapabilities,
   ModelChunk,
