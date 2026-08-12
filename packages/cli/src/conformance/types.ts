@@ -3,9 +3,10 @@ import type {
   ModelRequest,
   SandboxExecRequest,
   SandboxPort,
+  StorePort,
 } from '@openagentcore/kernel';
 
-export type ConformancePort = 'model' | 'sandbox';
+export type ConformancePort = 'model' | 'sandbox' | 'store' | 'trace';
 export type ConformanceStatus = 'passed' | 'failed' | 'skipped';
 
 export interface ConformanceCaseResult {
@@ -43,4 +44,11 @@ export interface SandboxConformanceAdapter {
     sandbox: SandboxPort,
     signal: AbortSignal,
   ): Promise<{ readonly available: boolean; readonly reason: string }>;
+}
+
+export interface StoreConformanceAdapter {
+  readonly name: string;
+  create(): Promise<StorePort>;
+  availability?(): Promise<{ readonly available: boolean; readonly reason: string }>;
+  dispose?(): Promise<void>;
 }

@@ -7,10 +7,12 @@ import {
   createConformanceReport,
   defaultModelAdapters,
   defaultSandboxAdapters,
+  defaultStoreAdapters,
   formatCapabilityMatrix,
   formatHumanReport,
   runModelConformance,
   runSandboxConformance,
+  runStoreConformance,
 } from './conformance/index.js';
 
 const options = parseArgs(process.argv.slice(2));
@@ -20,6 +22,9 @@ for (const adapter of defaultModelAdapters()) {
 }
 for (const adapter of defaultSandboxAdapters()) {
   suites.push(await runSandboxConformance(adapter));
+}
+for (const adapter of defaultStoreAdapters()) {
+  suites.push(await runStoreConformance(adapter));
 }
 const report = createConformanceReport(suites);
 

@@ -1,14 +1,23 @@
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import {
+  InMemoryEventLog,
   LocalProcessSandbox,
   ScriptedModelPort,
   type ModelPort,
   type SandboxPort,
+  type StorePort,
 } from '@openagentcore/kernel';
+import { SqliteStore } from '@openagentcore/standard';
 import { describe, expect, it } from 'vitest';
 
 import { runModelConformance } from './model.js';
 import { createConformanceReport, formatCapabilityMatrix, formatHumanReport } from './report.js';
 import { runSandboxConformance } from './sandbox.js';
+import { runStoreConformance } from './store.js';
 
 describe('Port conformance suites', () => {
   it('passes honest model and local sandbox adapters', async () => {
@@ -83,6 +92,32 @@ describe('Port conformance suites', () => {
     expect(unavailable).toMatchObject({ status: 'skipped', detail: 'optional daemon missing' });
   });
 
+  it('passes SQLite store conformance and marks a lying atomic-CAS store red', async () => {
+    const filename = join(tmpdir(), `oac-cli-store-test-${randomUUID()}.sqlite`);
+    const sqlite = await runStoreConformance({
+      name: 'sqlite-test',
+      create: async () => new SqliteStore({ filename }),
+      dispose: async () => {
+        await Promise.all(
+          ['', '-shm', '-wal'].map((suffix) => rm(`${filename}${suffix}`, { force: true })),
+        );
+      },
+    });
+    const dishonest = await runStoreConformance({
+      name: 'dishonest-store',
+      create: async () => dishonestStore(),
+    });
+
+    expect(sqlite.status).toBe('passed');
+    expect(dishonest.status).toBe('failed');
+    expect(dishonest.cases).toContainEqual(
+      expect.objectContaining({
+        name: 'atomic CAS admits exactly one stale multi-writer append',
+        status: 'failed',
+      }),
+    );
+  });
+
   it('formats human, JSON-backed matrix, and overall failure consistently', () => {
     const report = createConformanceReport([
       {
@@ -108,3 +143,36 @@ describe('Port conformance suites', () => {
     expect(formatCapabilityMatrix(report)).toContain('| sandbox | optional | skipped |');
   });
 });
+
+function dishonestStore(): StorePort {
+  const values = new Map<string, Uint8Array>();
+  return {
+    capabilities: {
+      atomicCas: true,
+      sequence: 'contiguous',
+      readConsistency: 'strong-primary',
+      durability: 'committed',
+    },
+    kv: {
+      get: async (key) => {
+        const value = values.get(key);
+        return value === undefined ? undefined : new Uint8Array(value);
+      },
+      set: async (key, value) => {
+        values.set(key, new Uint8Array(value));
+      },
+      delete: async (key) => values.delete(key),
+    },
+    eventLog: {
+      open: (identity) => {
+        const delegate = new InMemoryEventLog(identity);
+        return {
+          ...identity,
+          append: async (event) => delegate.append(event),
+          read: (fromSeq) => delegate.read(fromSeq),
+          subscribe: (subscriber, onError) => delegate.subscribe(subscriber, onError),
+        };
+      },
+    },
+  };
+}
