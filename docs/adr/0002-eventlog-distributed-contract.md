@@ -1,6 +1,6 @@
 # ADR 0002：EventLog 分布式契约
 
-- 状态：提议（2026-08-11）
+- 状态：已采纳（2026-08-11）；M2 实现选择见 [ADR 0011](0011-durable-store-and-trace.md)
 - 目标里程碑：M2（Store providers）
 
 ## 背景
@@ -32,4 +32,4 @@
 - 不实现消费组、幂等键、游标存储或投递后台任务。
 - 不改变 M0-1 的事件 Schema、compaction 策略或 SnapshotStore 契约。
 
-上述选择在 M2 结合 provider conformance、故障注入与性能数据后另行决策。
+上述选择由 ADR 0011 给出本项目的 M2 方案；本 ADR 的公共 EventLog 契约保持不变。
