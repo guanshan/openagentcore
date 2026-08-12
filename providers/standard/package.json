@@ -19,6 +19,14 @@
     "./sandbox": {
       "types": "./dist/sandbox/index.d.ts",
       "import": "./dist/sandbox/index.js"
+    },
+    "./store": {
+      "types": "./dist/store/index.d.ts",
+      "import": "./dist/store/index.js"
+    },
+    "./trace": {
+      "types": "./dist/trace/index.d.ts",
+      "import": "./dist/trace/index.js"
     }
   },
   "files": [
@@ -31,7 +39,17 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "peerDependencies": {
-    "@openagentcore/kernel": "^0.1.0"
+    "@openagentcore/kernel": "^0.1.0",
+    "mysql2": "^3.23.3",
+    "redis": "^6.2.1"
+  },
+  "peerDependenciesMeta": {
+    "mysql2": {
+      "optional": true
+    },
+    "redis": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@openagentcore/kernel": "workspace:*",

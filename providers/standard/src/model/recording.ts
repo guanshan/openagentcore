@@ -11,11 +11,16 @@ import {
 } from '@openagentcore/kernel';
 
 import { MAX_TIMER_DELAY_MS } from './limits.js';
-import { authorizationCredential, MODEL_SENSITIVE_KEYS } from './sensitive.js';
+import {
+  authorizationCredential,
+  MODEL_SENSITIVE_KEYS,
+  MODEL_SENSITIVE_REDACTION,
+  redactSensitiveText,
+} from './sensitive.js';
 
 export const MODEL_RECORDING_SPEC_VERSION = '0.4.0' as const;
 export const MODEL_RECORDING_KIND = 'model-port-recording' as const;
-export const MODEL_RECORDING_REDACTION = '[REDACTED]' as const;
+export const MODEL_RECORDING_REDACTION = MODEL_SENSITIVE_REDACTION;
 
 export const MODEL_RECORDING_SENSITIVE_KEYS = MODEL_SENSITIVE_KEYS;
 
@@ -837,14 +842,14 @@ function serializeError(error: unknown, context: RedactionContext): RecordedMode
     return {
       type: 'model-port',
       name: 'ModelPortError',
-      message: sanitizeText(error.message, context.secrets),
+      message: redactSensitiveText(error.message, context.secrets),
       kind: error.kind,
       retryable: error.retryable,
       ...(error.status === undefined ? {} : { status: error.status }),
       ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
       ...(error.providerCode === undefined
         ? {}
-        : { providerCode: sanitizeText(error.providerCode, context.secrets) }),
+        : { providerCode: redactSensitiveText(error.providerCode, context.secrets) }),
       ...(details === undefined ? {} : { details }),
     };
   }
@@ -852,8 +857,8 @@ function serializeError(error: unknown, context: RedactionContext): RecordedMode
   const message = error instanceof Error ? error.message : String(error);
   return {
     type: 'generic',
-    name: sanitizeText(name, context.secrets),
-    message: sanitizeText(message, context.secrets),
+    name: redactSensitiveText(name, context.secrets),
+    message: redactSensitiveText(message, context.secrets),
   };
 }
 
@@ -1022,20 +1027,6 @@ function collectSecretStrings(value: JsonValue, secrets: Set<string>): void {
   } else if (value !== null && typeof value === 'object') {
     for (const nested of Object.values(value)) collectSecretStrings(nested, secrets);
   }
-}
-
-function sanitizeText(text: string, secrets: ReadonlySet<string>): string {
-  let sanitized = text;
-  const longestFirst = [...secrets].sort((left, right) => right.length - left.length);
-  for (const secret of longestFirst) {
-    sanitized = sanitized.split(secret).join(MODEL_RECORDING_REDACTION);
-  }
-  return sanitized
-    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/giu, `$1${MODEL_RECORDING_REDACTION}`)
-    .replace(
-      /((?:api[-_ ]?key|access[-_ ]?token)\s*[:=]\s*)[^\s,;]+/giu,
-      `$1${MODEL_RECORDING_REDACTION}`,
-    );
 }
 
 function createRelativeClock(now: () => number): { read(): number } {

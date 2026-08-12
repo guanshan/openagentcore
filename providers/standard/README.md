@@ -104,7 +104,7 @@ const agent = AgentBuilder.fromPreset('oss-local')
 | `OAC_MODEL_MAX_CONTEXT`       | `model.capabilities.maxContext`       |
 | `OAC_MODEL_VISION`            | `model.capabilities.vision`           |
 
-当前 `oss-local` 诚实装配内存 EventLog、进程内 ToolRegistry、默认 Strategy/Prompt 与 OpenAI-compatible ModelPort。SandboxPort 已有独立的本地与 Docker 实现，但 preset 尚未注入 workspace root，因此不擅自构造；StorePort 与 TracePort 尚未定义。
+当前 `oss-local` 诚实装配内存 EventLog、进程内 ToolRegistry、默认 Strategy/Prompt 与 OpenAI-compatible ModelPort。SandboxPort 已有独立的本地与 Docker 实现，但 preset 尚未注入 workspace root，因此不擅自构造；持久化 Store 与 OTLP Trace 需要显式注入，避免 preset 猜测文件路径、数据库或遥测端点。
 
 ## Docker SandboxPort
 
@@ -118,6 +118,51 @@ const sandbox = new DockerSandbox({
 ```
 
 Docker adapter 通过宿主 `docker` CLI 启动一次性、禁网容器，把仓库 bind mount 到 Port 统一的 `/workspace`。它不会自动拉镜像；Docker Engine 或指定本地镜像不可用时，`availability()` 返回明确原因，conformance 将该 adapter 报告为 `skipped`，常规 CI 不以 Docker 可用为前提。此实现不声明 snapshot 能力。
+
+## Durable StorePort
+
+```ts
+import { AgentBuilder } from '@openagentcore/standard';
+import { SqliteStore } from '@openagentcore/standard/store';
+
+const store = new SqliteStore({ filename: './openagentcore.sqlite' });
+const eventLog = store.eventLog.open({ tenantId: 'tenant-a', sessionId: 'session-a' });
+const agent = AgentBuilder.fromPreset('oss-local').eventLog(eventLog).build();
+
+// 进程关闭时：
+await store.close();
+```
+
+SQLite 使用 Node 内置驱动，是零配置默认。MySQL 与 Redis 由 `MySqlStore.create({ uri })`、`RedisStore.create({ url })` 延迟加载；应用按需安装可选 peer `mysql2` 或 `redis`，驱动不进入 Kernel，也不是 standard 的 runtime dependency。
+
+三个实现都以每流 head 做原子 CAS，标准持久化流只接受连续 `seq`，`read(fromSeq)` 返回调用时定界且可重复迭代的 primary 强一致有限快照。`subscribe` 仍只是打开该 EventLog 实例的进程内通知，不轮询数据库，也不伪装跨副本投递。
+
+| Adapter | durability              | 可选前置条件    |
+| ------- | ----------------------- | --------------- |
+| SQLite  | `committed`             | 无              |
+| MySQL   | `committed`             | `mysql2` + 主库 |
+| Redis   | `deployment-configured` | `redis` + 主库  |
+
+Redis 的 Lua 脚本保证 CAS、事件写入与 head 推进原子可见，但掉电或 failover 后是否保留已确认写取决于 AOF、复制和等待策略，因此不会声明与 SQLite/MySQL 相同的持久性。
+
+## OTLP TracePort
+
+```ts
+import { AgentBuilder, OtlpTracePort } from '@openagentcore/standard';
+
+const trace = new OtlpTracePort({
+  endpoint: 'http://127.0.0.1:4318',
+  resourceAttributes: { 'service.name': 'my-agent' },
+});
+const agent = AgentBuilder.fromPreset('oss-local').trace(trace).build();
+
+// flush spans and metrics before process exit
+await trace.shutdown();
+```
+
+Exporter 使用 OTLP/HTTP JSON 的 `/v1/traces` 与 `/v1/metrics`。AgentLoop 产生 `invoke_agent`、step、`chat` 与 `execute_tool` span 树；token 使用 `gen_ai.client.token.usage`，成本、step/turn/tool 延迟和 Strategy 效果使用 `openagentcore.*` 扩展指标。
+
+`captureContent` 默认 `false`，因此 prompt、模型内容和工具参数/结果不进入 trace。显式开启后，内容先经过 Record & Replay 共用的敏感 key、Bearer/API key/access token 文本规则及 `additionalSensitiveKeys`，再序列化为 attribute。OTLP headers 只用于传输，不写入 payload。
 
 ## 离线与实机验证
 

@@ -118,6 +118,27 @@ export type {
   SandboxSnapshot,
 } from './ports/sandbox.js';
 export type {
+  EventLogPort,
+  KvPort,
+  StoreCapabilities,
+  StoreDurability,
+  StorePort,
+  StoreReadConsistency,
+  StoreSequenceSemantics,
+} from './ports/store.js';
+export { NoopTracer } from './ports/trace.js';
+export type {
+  TraceAttributeValue,
+  TraceAttributes,
+  TraceCapabilities,
+  TraceMetric,
+  TracePort,
+  TraceSpan,
+  TraceSpanContext,
+  TraceSpanEndOptions,
+  TraceSpanOptions,
+} from './ports/trace.js';
+export type {
   FinishModelChunk,
   ModelCapabilities,
   ModelChunk,
@@ -269,3 +290,4 @@ export type {
   StrategySelection,
   TurnResult,
 } from './loop/agent-loop.js';
+export type { TraceErrorHandler } from './loop/trace.js';

@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   AgentLoop,
@@ -10,10 +11,12 @@ import {
   ToolRegistry,
   type ModelChunk,
   type ModelPort,
+  type EventLog,
   type Tool,
   type ToolExecutionRequest,
   type ToolExecutionResult,
 } from '@openagentcore/kernel';
+import { SqliteStore } from '@openagentcore/standard';
 import { RecordingModelPort, ReplayModelPort } from '@openagentcore/standard/model';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -81,6 +84,63 @@ describe('recorded coding loop', () => {
     replay.assertExhausted();
     await expectRepositoryCompleted(replayRoot);
   }, 15_000);
+
+  it('reopens SQLite and resumes the coding loop after the worker process really exits', async () => {
+    const repositoryRoot = await createFixtureRepository(fixtures);
+    const durableRoot = await mkdtemp(join(tmpdir(), 'oac-coding-durable-'));
+    fixtures.push(durableRoot);
+    const databasePath = join(durableRoot, 'coding.sqlite');
+    const scriptPath = join(durableRoot, 'model-script.json');
+    await writeFile(scriptPath, `${JSON.stringify(codingScript())}\n`, 'utf8');
+
+    const workerPath = fileURLToPath(new URL('./sqlite-crash-worker.test.ts', import.meta.url));
+    const worker = await runProcess(
+      {
+        command: 'pnpm',
+        args: ['exec', 'vitest', 'run', workerPath],
+        cwd: process.cwd(),
+        environment: {
+          OAC_SQLITE_CRASH_WORKER: '1',
+          OAC_SQLITE_CRASH_DATABASE: databasePath,
+          OAC_SQLITE_CRASH_REPOSITORY: repositoryRoot,
+          OAC_SQLITE_CRASH_SCRIPT: scriptPath,
+        },
+        maxOutputBytes: 1_000_000,
+      },
+      signal,
+    );
+    expect(worker.exitCode, worker.stderr || worker.stdout).toBe(0);
+    expect(await git(['status', '--porcelain'], repositoryRoot)).toContain('src/add.mjs');
+
+    const store = new SqliteStore({ filename: databasePath });
+    try {
+      const resumed = createLoop(repositoryRoot, new ScriptedModelPort(processRecoveryScript()), {
+        eventLog: store.eventLog.open({
+          tenantId: 'tenant-coding',
+          sessionId: 'session-coding-process-recovery',
+        }),
+      });
+      const result = await resumed.resumeTurn();
+
+      expect(result.stopReason).toBe('completed');
+      expect(result.events).toContainEqual(
+        expect.objectContaining({
+          type: 'tool.result',
+          callId: 'call-verify-failed',
+          outcome: 'failed',
+          attempts: 2,
+        }),
+      );
+      expect(
+        result.events.filter(
+          (event) => event.type === 'tool.call' && event.callId === 'call-verify-failed',
+        ),
+      ).toHaveLength(1);
+    } finally {
+      await store.close();
+    }
+    await expectRepositoryCompleted(repositoryRoot);
+  }, 30_000);
 });
 
 function codingScript(): readonly (readonly ModelChunk[])[] {
@@ -125,6 +185,35 @@ function codingScript(): readonly (readonly ModelChunk[])[] {
   ];
 }
 
+function processRecoveryScript(): readonly (readonly ModelChunk[])[] {
+  return [
+    [toolCall('call-read-after-restart', 'coding.read-file', { path: 'src/add.mjs' })],
+    [
+      toolCall('call-edit-correct', 'coding.replace', {
+        path: 'src/add.mjs',
+        oldText: 'return a * b;',
+        newText: 'return a + b;',
+      }),
+    ],
+    [
+      toolCall('call-verify-passed', 'coding.run-command', {
+        command: 'node verify.mjs',
+      }),
+    ],
+    [toolCall('call-diff', 'coding.git-diff', {})],
+    [
+      toolCall('call-commit', 'coding.git-commit', {
+        message: 'fix add implementation',
+        paths: ['src/add.mjs'],
+      }),
+    ],
+    [
+      { kind: 'text', text: 'The implementation is fixed, verified, and committed.' },
+      { kind: 'finish', reason: 'stop' },
+    ],
+  ];
+}
+
 function toolCall(callId: string, tool: string, args: ToolExecutionRequest['args']): ModelChunk {
   return { kind: 'tool-call', callId, tool, args };
 }
@@ -132,7 +221,7 @@ function toolCall(callId: string, tool: string, args: ToolExecutionRequest['args
 function createLoop(
   root: string,
   model: ModelPort,
-  overrides: { readonly eventLog?: InMemoryEventLog; readonly tools?: ToolRegistry } = {},
+  overrides: { readonly eventLog?: EventLog; readonly tools?: ToolRegistry } = {},
 ): AgentLoop {
   const toolset = createCodingToolset({ root, gitEnvironment });
   return new AgentLoop({

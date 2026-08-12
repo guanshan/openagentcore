@@ -2,7 +2,7 @@
 
 开源的、分层的 Agent 基建组合层（Infra Composition Layer）——自由组合各家 LLM / Sandbox / 网关 / 可观测 / 中间件产品（腾讯云、阿里云、火山引擎、知名开源组件），在其上快速做出生产级 Coding Agent 产品：嵌入式 App、客户端产品或后台 Server。
 
-> **状态：M2 Provider 地基阶段。** 已提供事件溯源 AgentLoop、Strategy/Middleware、版本化 Prompt、首个 OpenAI-compatible ModelPort、Record & Replay、细粒度权限 glob、SandboxPort（Local/Docker）、最小 Coding 闭环，以及 `oac conformance`；Runtime 与 UI 尚未实现。
+> **状态：M2 Provider 地基阶段。** 已提供事件溯源 AgentLoop、Strategy/Middleware、版本化 Prompt、首个 OpenAI-compatible ModelPort、Record & Replay、细粒度权限 glob、SandboxPort（Local/Docker）、持久化 StorePort（SQLite/MySQL/Redis）、TracePort（Noop/OTLP）、最小 Coding 闭环，以及 `oac conformance`；Runtime 与 UI 尚未实现。
 
 ## 为什么是它
 
@@ -21,13 +21,13 @@
 | [packages/runtime/](packages/runtime/)                        | L3  | HTTP/WS、A2A、MCP server、任务队列、触发器、多租户       |
 | [packages/ui/](packages/ui/) · [packages/cli/](packages/cli/) | L4  | React UI Kit 与 `oac` 命令行                             |
 | [providers/](providers/)                                      | L2  | 各厂商适配器，本仓唯一的生长轴                           |
-| [providers/standard/](providers/standard/)                    | L2  | OpenAI-compatible 模型、Docker Sandbox、录制回放与组合根 |
+| [providers/standard/](providers/standard/)                    | L2  | 通用 Model/Sandbox/Store/Trace Adapter、录制回放与组合根 |
 
 首个真实 Provider 的离线 Facade 与显式实机入口见 [examples/first-real-provider/](examples/first-real-provider/)。
 
-Coding 闭环的 CI 回放在系统临时目录创建独立 fixture Git 仓，覆盖“错误修改 → 验证失败 → 修正 → 验证通过 → 提交”和验证中断后的恢复续跑；不会修改本仓工作树，也不会访问真实模型网络。
+Coding 闭环的 CI 回放在系统临时目录创建独立 fixture Git 仓，覆盖“错误修改 → 验证失败 → 修正 → 验证通过 → 提交”和验证中断后的恢复续跑；SQLite 卷还让子进程真实退出，再由新进程重开数据库续跑。测试不会修改本仓工作树，也不会访问真实模型网络。
 
-`pnpm conformance` 按 Model/Sandbox Port 自证现有 Adapter，并明确区分通过、失败和可选前置条件缺失导致的跳过。机器结果与自动生成的能力矩阵分别见 [spec/conformance-results.json](spec/conformance-results.json) 和 [docs/capabilities.md](docs/capabilities.md)。
+`pnpm conformance` 按 Model/Sandbox/Store/Trace Port 自证现有 Adapter，并明确区分通过、失败和可选前置条件缺失导致的跳过。机器结果与自动生成的能力矩阵分别见 [spec/conformance-results.json](spec/conformance-results.json) 和 [docs/capabilities.md](docs/capabilities.md)。
 
 Python SDK 位于独立仓库 [openagentcore-py](https://github.com/guanshan/openagentcore-py)，镜像本仓目录结构、共享 spec。
 
