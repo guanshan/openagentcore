@@ -272,6 +272,13 @@ export function applyEventToSessionState(
       assertActiveStepAssociation(next, event.stepId, event);
       break;
 
+    case 'model.attempt.discarded':
+      assertActiveStepAssociation(next, event.stepId, event);
+      if (event.discarded.toSeq >= event.seq) {
+        fail(event, 'discarded model delta range must precede the discard event');
+      }
+      break;
+
     case 'tool.call':
       assertActiveStepAssociation(next, event.stepId, event);
       if (next.seenToolCallIds.includes(event.callId)) {

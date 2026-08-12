@@ -2,7 +2,7 @@
 
 开源的、分层的 Agent 基建组合层（Infra Composition Layer）——自由组合各家 LLM / Sandbox / 网关 / 可观测 / 中间件产品（腾讯云、阿里云、火山引擎、知名开源组件），在其上快速做出生产级 Coding Agent 产品：嵌入式 App、客户端产品或后台 Server。
 
-> **状态：M1 Provider 接入阶段。** 已提供事件溯源 AgentLoop、Strategy/Middleware、版本化 Prompt、Context dry-run，以及首个 OpenAI-compatible ModelPort、Record & Replay 和 `oss-local` 组合根；Runtime、UI 与 CLI 尚未实现。
+> **状态：M1 Provider/Coding 接入阶段。** 已提供事件溯源 AgentLoop、Strategy/Middleware、版本化 Prompt、Context dry-run、首个 OpenAI-compatible ModelPort、Record & Replay、`oss-local` 组合根，以及最小 Coding 工具与验证闭环；Runtime、UI 与 CLI 尚未实现。
 
 ## 为什么是它
 
@@ -17,13 +17,15 @@
 | ------------------------------------------------------------- | --- | -------------------------------------------------------- |
 | [spec/](spec/)                                                | L0  | 语言无关协议：事件流、工具 Schema、Trajectory、UI 线协议 |
 | [packages/kernel/](packages/kernel/)                          | L1  | AgentLoop、Prompt/Context、Strategy/Middleware、Port     |
-| [packages/coding/](packages/coding/)                          | —   | Coding Agent 能力包（代码理解、Git 工作流、验证闭环）    |
+| [packages/coding/](packages/coding/)                          | —   | Coding Agent 能力包（文件/执行工具、Git、验证闭环）      |
 | [packages/runtime/](packages/runtime/)                        | L3  | HTTP/WS、A2A、MCP server、任务队列、触发器、多租户       |
 | [packages/ui/](packages/ui/) · [packages/cli/](packages/cli/) | L4  | React UI Kit 与 `oac` 命令行                             |
 | [providers/](providers/)                                      | L2  | 各厂商适配器，本仓唯一的生长轴                           |
 | [providers/standard/](providers/standard/)                    | L2  | OpenAI-compatible 模型、录制回放与 `oss-local` 组合根    |
 
 首个真实 Provider 的离线 Facade 与显式实机入口见 [examples/first-real-provider/](examples/first-real-provider/)。
+
+Coding 闭环的 CI 回放在系统临时目录创建独立 fixture Git 仓，覆盖“错误修改 → 验证失败 → 修正 → 验证通过 → 提交”和验证中断后的恢复续跑；不会修改本仓工作树，也不会访问真实模型网络。
 
 Python SDK 位于独立仓库 [openagentcore-py](https://github.com/guanshan/openagentcore-py)，镜像本仓目录结构、共享 spec。
 

@@ -1,4 +1,11 @@
-import type { AgentEvent, JsonObject, JsonValue, ModelUsage, UserInput } from '../events/types.js';
+import type {
+  AgentEvent,
+  JsonObject,
+  JsonValue,
+  ModelStreamRetryMode,
+  ModelUsage,
+  UserInput,
+} from '../events/types.js';
 import {
   ModelPortError,
   type ModelChunk,
@@ -63,6 +70,7 @@ export interface StepRuntime extends ContextRuntime {
   readonly retry: Strategy<RetryStrategyInput, RetryDecision, unknown>;
   readonly emit: EmitAgentEvent;
   readonly sleep: (delayMs: number, signal: AbortSignal) => Promise<void>;
+  readonly modelStreamRetryMode: ModelStreamRetryMode;
   readonly steering: () => readonly UserInput[];
   readonly consumeSteering: (stepId: string, count: number) => void;
   readonly getActiveUsage: () => ModelUsage;
@@ -367,6 +375,7 @@ async function callModel(
   }
 
   const requestId = persistedRequest?.requestId ?? `${stepId}:request`;
+  const retryMode = persistedRequest?.retryMode ?? runtime.modelStreamRetryMode;
   const context: ModelMiddlewareContext = {
     ...middlewareContext(runtime.eventLog, signal, turnId, stepId),
     request,
@@ -376,11 +385,7 @@ async function callModel(
     runtime,
     stepId,
     requestId,
-    persistedEvents.filter(
-      (event): event is Extract<AgentEvent, { readonly type: 'model.delta' }> =>
-        event.type === 'model.delta' &&
-        (event.requestId === undefined || event.requestId === requestId),
-    ),
+    activeModelDeltas(persistedEvents, requestId),
   );
   let usage: ModelUsage | undefined;
   let recordedChunks = 0;
@@ -463,6 +468,7 @@ async function callModel(
         assembled: finalizeContextAssembly(assemblyDraft, context.request),
         toolUse: context.request.toolUse,
         capabilityDowngrades,
+        retryMode,
       },
       signal,
     );
@@ -533,6 +539,9 @@ async function callModel(
       context.request = structuredClone(request);
     }
     await recordRequest();
+    if (persistedRequest !== undefined && retryMode === 'discard') {
+      await journal.discard('recovery', signal);
+    }
     let attempt = 1;
     while (true) {
       const outcome = await invokeModelPort();
@@ -551,7 +560,11 @@ async function callModel(
       }
       await runtime.sleep(retry.delayMs, signal);
       attempt += 1;
-      journal.rewind();
+      if (retryMode === 'discard') {
+        await journal.discard('provider-failure', signal);
+      } else {
+        journal.rewind();
+      }
     }
   });
 
@@ -629,6 +642,7 @@ class ModelDeltaJournal {
   readonly #stepId: string;
   readonly #requestId: string;
   readonly #atoms: ModelDeltaAtom[] = [];
+  readonly #activeDeltaSeqs: number[] = [];
   #cursor = 0;
 
   constructor(
@@ -641,6 +655,7 @@ class ModelDeltaJournal {
     this.#stepId = stepId;
     this.#requestId = requestId;
     for (const event of persisted) {
+      this.#activeDeltaSeqs.push(event.seq);
       if (event.delta.kind === 'text') {
         this.#atoms.push(
           ...[...event.delta.text].map((value): ModelDeltaAtom => ({ kind: 'text', value })),
@@ -674,7 +689,7 @@ class ModelDeltaJournal {
     if (suffix.length === 0) {
       return;
     }
-    await this.#runtime.emit(
+    const persisted = await this.#runtime.emit(
       {
         type: 'model.delta',
         stepId: this.#stepId,
@@ -683,6 +698,10 @@ class ModelDeltaJournal {
       },
       signal,
     );
+    if (persisted.type !== 'model.delta') {
+      throw new AgentLoopInvariantError('Expected model.delta while recording model text.');
+    }
+    this.#activeDeltaSeqs.push(persisted.seq);
   }
 
   async acceptTool(call: ToolCallModelChunk, signal: AbortSignal): Promise<void> {
@@ -700,7 +719,7 @@ class ModelDeltaJournal {
     if (!persist) {
       return;
     }
-    await this.#runtime.emit(
+    const persisted = await this.#runtime.emit(
       {
         type: 'model.delta',
         stepId: this.#stepId,
@@ -709,6 +728,38 @@ class ModelDeltaJournal {
       },
       signal,
     );
+    if (persisted.type !== 'model.delta') {
+      throw new AgentLoopInvariantError('Expected model.delta while recording a model tool call.');
+    }
+    this.#activeDeltaSeqs.push(persisted.seq);
+  }
+
+  async discard(
+    reason: Extract<AgentEvent, { readonly type: 'model.attempt.discarded' }>['reason'],
+    signal: AbortSignal,
+  ): Promise<void> {
+    const firstSeq = this.#activeDeltaSeqs[0];
+    const lastSeq = this.#activeDeltaSeqs.at(-1);
+    if (firstSeq !== undefined && lastSeq !== undefined) {
+      const persisted = await this.#runtime.emit(
+        {
+          type: 'model.attempt.discarded',
+          stepId: this.#stepId,
+          requestId: this.#requestId,
+          discarded: { fromSeq: firstSeq, toSeq: lastSeq },
+          reason,
+        },
+        signal,
+      );
+      if (persisted.type !== 'model.attempt.discarded') {
+        throw new AgentLoopInvariantError(
+          'Expected model.attempt.discarded while restarting a model attempt.',
+        );
+      }
+    }
+    this.#atoms.splice(0);
+    this.#activeDeltaSeqs.splice(0);
+    this.#cursor = 0;
   }
 
   rewind(): void {
@@ -734,6 +785,30 @@ class ModelDeltaJournal {
       `Retried model output diverged from the persisted prefix for ${this.#requestId} at atom ${this.#cursor}; received ${received}.`,
     );
   }
+}
+
+export function activeModelDeltas(
+  events: readonly AgentEvent[],
+  requestId: string,
+): readonly Extract<AgentEvent, { readonly type: 'model.delta' }>[] {
+  const active = new Map<number, Extract<AgentEvent, { readonly type: 'model.delta' }>>();
+  for (const event of events) {
+    if (
+      event.type === 'model.delta' &&
+      (event.requestId === undefined || event.requestId === requestId)
+    ) {
+      active.set(event.seq, event);
+      continue;
+    }
+    if (event.type === 'model.attempt.discarded' && event.requestId === requestId) {
+      for (const seq of active.keys()) {
+        if (seq >= event.discarded.fromSeq && seq <= event.discarded.toSeq) {
+          active.delete(seq);
+        }
+      }
+    }
+  }
+  return [...active.values()];
 }
 
 async function executeRecordedToolCall(

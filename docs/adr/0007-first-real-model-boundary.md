@@ -29,7 +29,7 @@ M0 只使用 `ScriptedModelPort`，因此若干内核假设尚未经过真实模
 
 ## 开放问题
 
-1. [ADR 0006](0006-model-stream-retry-prefix.md) 要求重试输出逐 Unicode code point 复现已持久化前缀。真实随机模型不保证复现文本或工具调用 ID；后续需决定采用 Provider continuation、关闭部分重试，还是把分叉建模为新事件。Adapter 不缓存或改写输出来隐藏分叉。
+1. ~~真实随机模型的重试分叉如何建模~~：已由 [ADR 0008](0008-divergent-model-stream-retries.md) 决定为默认作废重来、严格前缀显式可选。Adapter 仍不得缓存或改写输出来隐藏分叉。
 2. OpenAI-compatible 没有统一的精确 token-count 或 capability-discovery API。`ModelCapabilities` 后续是否需要声明 token 计数精度、能力来源和探测时间，尚未决定。
 3. `length`、缺少 finish、refusal 与 usage 缺失尚未完整进入 AgentEvent；当前事件流不能解释所有模型终止原因。
 4. Prompted 文本协议当前每次响应只接受一个完整工具调用。是否扩展为多调用批次，以及如何兼容小模型的非严格 JSON，尚未决定。

@@ -6,7 +6,7 @@
 
 ## Schema 版本与 `$id`
 
-- spec 发行版本使用 SemVer，首个版本为 `0.1.0`；本次向后兼容增补后的版本为 `0.4.0`。
+- spec 发行版本使用 SemVer，首个版本为 `0.1.0`；本次向后兼容增补后的版本为 `0.5.0`。
 - Schema 文件名使用 `<name>.v<major>.json`；`v0` 表示当前实验性契约代际，不等同于 spec 发行版本。
 - Schema 的规范 `$id` 为 `https://openagentcore.dev/spec/schemas/<filename>`，与仓库文件名一一对应。
 - 当前 Schema 使用 JSON Schema 2020-12；顶层协议对象默认封闭，未声明字段会被拒绝。
@@ -21,7 +21,7 @@
 
 ## AgentEvent v0
 
-`agent-event.v0.json` 定义 12 种事件，其中 `step.started` 与 `step.finished` 在 M0-2 加入。每个事件都包含以下公共字段：
+`agent-event.v0.json` 定义 13 种事件，其中 `step.started` 与 `step.finished` 在 M0-2 加入，`model.attempt.discarded` 在 M1-2 加入。每个事件都包含以下公共字段：
 
 | 字段        | 约束                        |
 | ----------- | --------------------------- |
@@ -52,6 +52,8 @@ AgentLoop 事件使用以下关联与记账字段：
 - `step.finished` 必须与活动 step 匹配，并包含 `outcome` 与 `usage`。`outcome` 为 `succeeded`、`failed` 或 `aborted`。`succeeded` 表示 step 的控制流程完整结束，不表示其中每个工具的业务结果都成功。
 - `usage` 必须包含非负整数 `inputTokens`、`outputTokens` 与 `totalTokens`；可选 `cost` 使用非负 `amount` 和非空 `currency`。`turn.finished.usage` 是各步用量的累计值。
 - `model.request.toolUse` 记录实际采用的工具调用模式。值为 `prompted` 时表示已使用文本协议降级；`capabilityDowngrades` 记录可读的降级说明。
+- `model.request.retryMode` 可选记录 `discard` 或 `strict-prefix`。M1-2 AgentLoop 产生的新请求必须填写，恢复时以持久化值为准。
+- `model.attempt.discarded` 用 `stepId` / `requestId` 关联原请求，以 `discarded` 区间作废此前尝试的 `model.delta`，`reason` 为 `provider-failure` 或 `recovery`。原始事件仍保留在 EventLog。
 - `requestId`、工具与审批事件上的 `stepId` / `callId` 用于跨事件关联。它们对 M0-1 数据保持可选，M0-2 AgentLoop 产生的新事件应完整填写。
 - `tool.call.modelUsage` 在工具副作用前复制已完成模型调用的用量。恢复流程用它补写 `step.finished.usage`；旧事件可不包含该字段。
 - `tool.result.outcome` 为 `succeeded`、`failed` 或 `denied`；`attempts` 从 1 开始。既有 `result` 字段保持必填和开放 JSON 值，以便读取 M0-1 数据。`failed` 且不含 `error` 表示工具正常完成后的结果失败；同时包含 `error` 表示工具执行失败。
@@ -64,6 +66,7 @@ Session 状态由事件流投影，不单独持久化。replay 至少执行以�
 - 同一 Session 最多有一个活动 turn；`turn.finished` 必须匹配活动 turn，且不能越过活动 step 或未完成工作。
 - `step.started` 必须属于活动 turn；同一时刻最多有一个活动 step，`stepIndex` 在 turn 内严格递增；`step.finished` 必须匹配活动 step。
 - 使用 `step.*` 的 turn 中，模型、工具与审批事件必须属于当前活动 step。没有 `step.*` 的 M0-1 流继续按 legacy 规则读取。
+- `model.attempt.discarded.discarded` 必须只指向该事件之前的区间；消息投影移除区间内属于同一 step 的 assistant delta，后续恢复与工具批次组装忽略区间内的模型 delta。
 - `tool.result` 必须匹配更早的 `tool.call`，同一 `callId` 最多产生一个结果。
 - `permission.resolved` 必须匹配更早的 `permission.requested`，同一 `reqId` 最多解决一次；关联字段同时存在时必须一致。
 - 工具调用、审批、turn 或 step 可以在流尾保持未完成。这样的事件流是合法恢复前缀，不因缺少后续结束事件而拒绝。

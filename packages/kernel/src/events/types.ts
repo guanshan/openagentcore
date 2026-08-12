@@ -12,6 +12,7 @@ export type AgentEventType =
   | 'step.finished'
   | 'model.request'
   | 'model.delta'
+  | 'model.attempt.discarded'
   | 'tool.call'
   | 'tool.result'
   | 'permission.requested'
@@ -172,12 +173,22 @@ export interface ModelRequestEvent extends BaseAgentEvent<'model.request'> {
   readonly requestId?: string;
   readonly toolUse?: 'native' | 'prompted' | 'none';
   readonly capabilityDowngrades?: readonly string[];
+  readonly retryMode?: ModelStreamRetryMode;
 }
+
+export type ModelStreamRetryMode = 'discard' | 'strict-prefix';
 
 export interface ModelDeltaEvent extends BaseAgentEvent<'model.delta'> {
   readonly stepId: string;
   readonly delta: TextOrToolDelta;
   readonly requestId?: string;
+}
+
+export interface ModelAttemptDiscardedEvent extends BaseAgentEvent<'model.attempt.discarded'> {
+  readonly stepId: string;
+  readonly requestId: string;
+  readonly discarded: EventRange;
+  readonly reason: 'provider-failure' | 'recovery';
 }
 
 export interface ToolCallEvent extends BaseAgentEvent<'tool.call'> {
@@ -236,6 +247,7 @@ export type AgentEvent =
   | StepFinishedEvent
   | ModelRequestEvent
   | ModelDeltaEvent
+  | ModelAttemptDiscardedEvent
   | ToolCallEvent
   | ToolResultEvent
   | PermissionRequestedEvent

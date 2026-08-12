@@ -5,7 +5,13 @@ import {
   projectMessageHistory,
   type MessageHistoryItem,
 } from '../events/projection.js';
-import type { AgentEvent, ContextAssembly, ModelUsage, UserInput } from '../events/types.js';
+import type {
+  AgentEvent,
+  ContextAssembly,
+  ModelStreamRetryMode,
+  ModelUsage,
+  UserInput,
+} from '../events/types.js';
 import type { ModelPort, ModelRequest } from '../ports/model.js';
 import { createDefaultPromptRegistry } from '../prompts/builtins.js';
 import type { PromptRegistry } from '../prompts/registry.js';
@@ -88,6 +94,7 @@ export interface AgentLoopOptions {
   readonly prompts?: PromptRegistry;
   readonly now?: () => string;
   readonly sleep?: AgentLoopSleeper;
+  readonly modelStreamRetryMode?: ModelStreamRetryMode;
 }
 
 export interface RunTurnOptions {
@@ -155,6 +162,7 @@ export class AgentLoop {
   readonly #selections: AgentLoopStrategySelections;
   readonly #now: () => string;
   readonly #sleep: AgentLoopSleeper;
+  readonly #modelStreamRetryMode: ModelStreamRetryMode;
   readonly #steering: UserInput[] = [];
   readonly #costAccounting = createCostAccountingMiddleware();
 
@@ -175,6 +183,7 @@ export class AgentLoop {
     this.#selections = options.strategies ?? {};
     this.#now = options.now ?? (() => new Date().toISOString());
     this.#sleep = options.sleep ?? abortableDelay;
+    this.#modelStreamRetryMode = options.modelStreamRetryMode ?? 'discard';
   }
 
   use<TKind extends MiddlewareKind>(
@@ -372,6 +381,7 @@ export class AgentLoop {
       retry: selected.retry,
       emit: (payload, signal) => this.#emit(payload, signal),
       sleep: (delayMs, signal) => this.#sleep(delayMs, signal),
+      modelStreamRetryMode: this.#modelStreamRetryMode,
       steering: () => this.#steering,
       consumeSteering: (stepId, count) => {
         if (this.#state.activeStep?.stepId === stepId) {
@@ -624,6 +634,7 @@ function eventStepId(event: AgentEvent): string | undefined {
     case 'step.finished':
     case 'model.request':
     case 'model.delta':
+    case 'model.attempt.discarded':
     case 'tool.call':
     case 'tool.result':
     case 'permission.requested':
@@ -653,6 +664,9 @@ function reconcileEventForPersistence(authoritative: AgentEvent, proposed: Agent
       return candidate;
     case 'model.delta':
       // The event is the durable model output used to reconcile a recovered tool batch.
+      return candidate;
+    case 'model.attempt.discarded':
+      // Attempt invalidation defines projection and recovery semantics and cannot be rewritten.
       return candidate;
     case 'tool.call':
       // Tool intent is fixed before side effects; argument rewriting belongs in tool middleware.

@@ -49,11 +49,32 @@
       "delta": { "kind": "text", "text": "Reading." }
     },
     {
-      "type": "tool.call",
+      "type": "model.attempt.discarded",
       "seq": 4,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
       "ts": "2026-08-11T06:00:04Z",
+      "stepId": "step-1",
+      "requestId": "request-1",
+      "discarded": { "fromSeq": 3, "toSeq": 3 },
+      "reason": "provider-failure"
+    },
+    {
+      "type": "model.delta",
+      "seq": 5,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:05Z",
+      "stepId": "step-1",
+      "requestId": "request-1",
+      "delta": { "kind": "text", "text": "Reading." }
+    },
+    {
+      "type": "tool.call",
+      "seq": 6,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:06Z",
       "stepId": "step-1",
       "callId": "call-1",
       "tool": "read_file",
@@ -67,10 +88,10 @@
     },
     {
       "type": "permission.requested",
-      "seq": 5,
+      "seq": 7,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
-      "ts": "2026-08-11T06:00:05Z",
+      "ts": "2026-08-11T06:00:07Z",
       "stepId": "step-1",
       "callId": "call-1",
       "reqId": "permission-1",
@@ -79,10 +100,10 @@
     },
     {
       "type": "permission.resolved",
-      "seq": 6,
+      "seq": 8,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
-      "ts": "2026-08-11T06:00:06Z",
+      "ts": "2026-08-11T06:00:08Z",
       "stepId": "step-1",
       "callId": "call-1",
       "reqId": "permission-1",
@@ -91,10 +112,10 @@
     },
     {
       "type": "tool.result",
-      "seq": 7,
+      "seq": 9,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
-      "ts": "2026-08-11T06:00:07Z",
+      "ts": "2026-08-11T06:00:09Z",
       "stepId": "step-1",
       "callId": "call-1",
       "outcome": "succeeded",
@@ -103,10 +124,10 @@
     },
     {
       "type": "step.finished",
-      "seq": 8,
+      "seq": 10,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
-      "ts": "2026-08-11T06:00:08Z",
+      "ts": "2026-08-11T06:00:10Z",
       "turnId": "turn-1",
       "stepId": "step-1",
       "outcome": "succeeded",
@@ -119,27 +140,27 @@
     },
     {
       "type": "compaction.applied",
-      "seq": 9,
-      "tenantId": "tenant-demo",
-      "sessionId": "session-turn-tool",
-      "ts": "2026-08-11T06:00:09Z",
-      "summary": "The file read was requested.",
-      "dropped": { "fromSeq": 0, "toSeq": 3 }
-    },
-    {
-      "type": "checkpoint.created",
-      "seq": 10,
-      "tenantId": "tenant-demo",
-      "sessionId": "session-turn-tool",
-      "ts": "2026-08-11T06:00:10Z",
-      "snapshotRef": "snapshot-1"
-    },
-    {
-      "type": "turn.finished",
       "seq": 11,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
       "ts": "2026-08-11T06:00:11Z",
+      "summary": "The file read was requested.",
+      "dropped": { "fromSeq": 0, "toSeq": 5 }
+    },
+    {
+      "type": "checkpoint.created",
+      "seq": 12,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:12Z",
+      "snapshotRef": "snapshot-1"
+    },
+    {
+      "type": "turn.finished",
+      "seq": 13,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:13Z",
       "turnId": "turn-1",
       "stopReason": "completed",
       "usage": {
