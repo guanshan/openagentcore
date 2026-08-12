@@ -83,6 +83,130 @@
       },
       "detail": "Docker image node:22-bookworm-slim is not installed; conformance never pulls from the network.",
       "cases": []
+    },
+    {
+      "port": "store",
+      "adapter": "@openagentcore/standard/sqlite",
+      "status": "passed",
+      "capabilities": {
+        "atomicCas": true,
+        "sequence": "contiguous",
+        "readConsistency": "strong-primary",
+        "durability": "committed"
+      },
+      "detail": "6 cases passed.",
+      "cases": [
+        {
+          "name": "capability declaration is structurally valid",
+          "status": "passed",
+          "detail": "ok"
+        },
+        {
+          "name": "byte KV round-trips without aliasing",
+          "status": "passed",
+          "detail": "ok"
+        },
+        {
+          "name": "atomic CAS admits exactly one stale multi-writer append",
+          "status": "passed",
+          "detail": "ok"
+        },
+        {
+          "name": "inclusive reads are finite repeatable snapshots",
+          "status": "passed",
+          "detail": "ok"
+        },
+        {
+          "name": "conflicts neither append nor notify process-local subscribers",
+          "status": "passed",
+          "detail": "ok"
+        },
+        {
+          "name": "declared sequence and read consistency are honest",
+          "status": "passed",
+          "detail": "ok"
+        }
+      ]
+    },
+    {
+      "port": "store",
+      "adapter": "@openagentcore/standard/mysql",
+      "status": "skipped",
+      "capabilities": {
+        "atomicCas": true,
+        "sequence": "contiguous",
+        "readConsistency": "strong-primary",
+        "durability": "committed"
+      },
+      "detail": "OAC_MYSQL_URL is not configured.",
+      "cases": []
+    },
+    {
+      "port": "store",
+      "adapter": "@openagentcore/standard/redis",
+      "status": "skipped",
+      "capabilities": {
+        "atomicCas": true,
+        "sequence": "contiguous",
+        "readConsistency": "strong-primary",
+        "durability": "deployment-configured"
+      },
+      "detail": "OAC_REDIS_URL is not configured.",
+      "cases": []
+    },
+    {
+      "port": "trace",
+      "adapter": "@openagentcore/kernel/noop",
+      "status": "passed",
+      "capabilities": {
+        "exporter": "none",
+        "contentCapture": false
+      },
+      "detail": "3 cases passed.",
+      "cases": [
+        {
+          "name": "capability declaration is structurally valid and honest",
+          "status": "passed",
+          "detail": "ok"
+        },
+        {
+          "name": "turn and child span contexts preserve explicit parentage",
+          "status": "passed",
+          "detail": "ok"
+        },
+        {
+          "name": "token and strategy-style metrics flush through the port",
+          "status": "passed",
+          "detail": "ok"
+        }
+      ]
+    },
+    {
+      "port": "trace",
+      "adapter": "@openagentcore/standard/otlp-http",
+      "status": "passed",
+      "capabilities": {
+        "exporter": "otlp-http",
+        "contentCapture": false
+      },
+      "detail": "3 cases passed.",
+      "cases": [
+        {
+          "name": "capability declaration is structurally valid and honest",
+          "status": "passed",
+          "detail": "ok"
+        },
+        {
+          "name": "turn and child span contexts preserve explicit parentage",
+          "status": "passed",
+          "detail": "ok"
+        },
+        {
+          "name": "token and strategy-style metrics flush through the port",
+          "status": "passed",
+          "detail": "ok"
+        }
+      ]
     }
   ]
 }

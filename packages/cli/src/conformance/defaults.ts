@@ -6,9 +6,12 @@ import { join } from 'node:path';
 import { LocalProcessSandbox, NoopTracer } from '@openagentcore/kernel';
 import {
   DockerSandbox,
+  MYSQL_STORE_CAPABILITIES,
   MySqlStore,
   OtlpTracePort,
+  REDIS_STORE_CAPABILITIES,
   RedisStore,
+  SQLITE_STORE_CAPABILITIES,
   SqliteStore,
 } from '@openagentcore/standard';
 import { OpenAICompatibleModel } from '@openagentcore/standard/model';
@@ -63,6 +66,7 @@ export function defaultStoreAdapters(): readonly StoreConformanceAdapter[] {
   return [
     {
       name: '@openagentcore/standard/sqlite',
+      capabilities: SQLITE_STORE_CAPABILITIES,
       create: async () => new SqliteStore({ filename: sqlitePath }),
       dispose: async () => {
         await Promise.all(
@@ -72,6 +76,7 @@ export function defaultStoreAdapters(): readonly StoreConformanceAdapter[] {
     },
     {
       name: '@openagentcore/standard/mysql',
+      capabilities: MYSQL_STORE_CAPABILITIES,
       availability: async () =>
         availabilityProbe(mysqlUri, 'OAC_MYSQL_URL', (uri) => MySqlStore.create({ uri })),
       create: async () => {
@@ -81,6 +86,7 @@ export function defaultStoreAdapters(): readonly StoreConformanceAdapter[] {
     },
     {
       name: '@openagentcore/standard/redis',
+      capabilities: REDIS_STORE_CAPABILITIES,
       availability: async () =>
         availabilityProbe(redisUrl, 'OAC_REDIS_URL', (url) =>
           RedisStore.create({ url, keyPrefix: redisPrefix }),

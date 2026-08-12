@@ -22,7 +22,7 @@ export async function runStoreConformance(
   try {
     const availability = await adapter.availability?.();
     if (availability !== undefined && !availability.available) {
-      return skipped(adapter.name, availability.reason);
+      return skipped(adapter.name, adapter.capabilities ?? {}, availability.reason);
     }
     first = await adapter.create();
     second = await adapter.create();
@@ -34,6 +34,12 @@ export async function runStoreConformance(
 
     await runCase(cases, 'capability declaration is structurally valid', async () => {
       validateCapabilities(capabilities);
+      if (
+        adapter.capabilities !== undefined &&
+        JSON.stringify(adapter.capabilities) !== JSON.stringify(capabilities)
+      ) {
+        throw new Error('runtime capabilities differ from the adapter declaration');
+      }
       if (JSON.stringify(capabilities) !== JSON.stringify(second?.capabilities)) {
         throw new Error('two instances declared different capabilities');
       }
@@ -154,12 +160,18 @@ function validateCapabilities(capabilities: StoreCapabilities): void {
   }
 }
 
-function skipped(adapter: string, reason: string): ConformanceSuiteResult {
+function skipped(
+  adapter: string,
+  capabilities: StoreCapabilities | Readonly<Record<string, boolean | number | string>>,
+  reason: string,
+): ConformanceSuiteResult {
   return Object.freeze({
     port: 'store',
     adapter,
     status: 'skipped',
-    capabilities: Object.freeze({}),
+    capabilities: Object.freeze({ ...capabilities }) as Readonly<
+      Record<string, boolean | number | string>
+    >,
     detail: reason,
     cases: Object.freeze([]),
   });

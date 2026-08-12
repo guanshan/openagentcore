@@ -4,6 +4,7 @@ import type {
   SandboxExecRequest,
   SandboxPort,
   StorePort,
+  StoreCapabilities,
   TracePort,
 } from '@openagentcore/kernel';
 
@@ -49,6 +50,7 @@ export interface SandboxConformanceAdapter {
 
 export interface StoreConformanceAdapter {
   readonly name: string;
+  readonly capabilities?: StoreCapabilities;
   create(): Promise<StorePort>;
   availability?(): Promise<{ readonly available: boolean; readonly reason: string }>;
   dispose?(): Promise<void>;
