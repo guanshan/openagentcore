@@ -1,0 +1,51 @@
+{
+  "name": "@openagentcore/tencent",
+  "version": "0.1.0",
+  "description": "Tencent Cloud adapters and composition preset for OpenAgentCore.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./model": {
+      "types": "./dist/model/index.d.ts",
+      "import": "./dist/model/index.js"
+    },
+    "./sandbox": {
+      "types": "./dist/sandbox/index.d.ts",
+      "import": "./dist/sandbox/index.js"
+    },
+    "./trace": {
+      "types": "./dist/trace/index.d.ts",
+      "import": "./dist/trace/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run src",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@e2b/code-interpreter": "^2.7.0",
+    "@openagentcore/kernel": "^0.1.0",
+    "@openagentcore/standard": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@e2b/code-interpreter": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@openagentcore/kernel": "workspace:*",
+    "@openagentcore/standard": "workspace:*"
+  }
+}

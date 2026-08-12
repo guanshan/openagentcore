@@ -71,6 +71,9 @@ importers:
       '@openagentcore/standard':
         specifier: workspace:*
         version: link:../../providers/standard
+      '@openagentcore/tencent':
+        specifier: workspace:*
+        version: link:../../providers/tencent
 
   packages/coding:
     devDependencies:
@@ -101,6 +104,15 @@ importers:
       ajv-formats:
         specifier: ^3.0.1
         version: 3.0.1(ajv@8.20.0)
+
+  providers/tencent:
+    devDependencies:
+      '@openagentcore/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@openagentcore/standard':
+        specifier: workspace:*
+        version: link:../standard
 
 packages:
 
