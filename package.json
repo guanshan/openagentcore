@@ -9,6 +9,8 @@
   "scripts": {
     "build": "pnpm -r --if-present run build",
     "changeset": "changeset",
+    "conformance": "pnpm --filter @openagentcore/cli build && node packages/cli/dist/bin.js conformance",
+    "conformance:update": "pnpm conformance --json spec/conformance-results.json --matrix docs/capabilities.md",
     "example:context": "pnpm --filter @openagentcore/context-dry-run start",
     "example:minimal": "pnpm --filter @openagentcore/minimal-agent start",
     "example:first-real": "pnpm --filter @openagentcore/first-real-provider start",

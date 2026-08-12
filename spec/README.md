@@ -146,3 +146,7 @@ Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。摘�
 | A2A                                | v1.0                                                                    |
 | AG-UI                              | 跟随主线，`oac.*` 扩展事件 Schema 在本目录定义                          |
 | OpenAI-compatible Chat Completions | M1-1 公共 SSE 子集（2026-08-11）；契约见 ADR 0007 与 Adapter 一致性测试 |
+
+## Port conformance 结果
+
+`oac conformance` 的机器可读结果写入 [`conformance-results.json`](conformance-results.json)，`schemaVersion` 独立于 L0 事件 Schema。它按 Port / Adapter / case 记录 `passed`、`failed` 或 `skipped`；`skipped` 表示未认证通过，并必须携带缺失前置条件的原因。能力矩阵由同一内存结果自动生成，不另设手工真相源。

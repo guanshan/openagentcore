@@ -26,5 +26,5 @@
 
 ## 开放问题
 
-1. M0-2 内置 `policy-file` 目前只能匹配 tool、group 和 permission kind，尚不能声明 path glob、命令模式或参数约束。Coding 工具会把完整 args 与 permission 一起交给 Strategy，外部策略已经可以检查这些字段；公共规则语法如何扩展需在 Kernel Strategy 中统一设计，不能在 Coding 包内先造一套。
+1. **已由 M2-1 / [ADR 0010](0010-sandbox-port-filesystem-semantics.md) 解决**：Kernel Tool Port 的 `describeAction` 在审批前生成规范路径和命令材料，内置 `policy-file` 统一提供 path / command / executable glob；Coding 仍不实现私有规则引擎。
 2. 文件系统没有通用原子 compare-and-swap。当前 revision 检查缩小但不能消除检查与写入之间的竞态；Sandbox/Store provider 后续是否提供版本化写契约仍未决定。
