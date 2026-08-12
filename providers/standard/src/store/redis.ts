@@ -66,12 +66,10 @@ export class RedisStore implements StorePort {
   readonly eventLog: StorePort['eventLog'];
 
   readonly #client: RedisClient;
-  readonly #keyPrefix: string;
   #closed = false;
 
   private constructor(client: RedisClient, keyPrefix: string) {
     this.#client = client;
-    this.#keyPrefix = keyPrefix;
     this.kv = new RedisKv(client, keyPrefix, () => this.#assertOpen());
     this.eventLog = Object.freeze({
       open: (identity: EventStreamIdentity) => {
