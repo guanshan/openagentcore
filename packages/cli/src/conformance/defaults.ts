@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { LocalProcessSandbox, NoopTracer } from '@openagentcore/kernel';
+import { LocalProcessSandbox, NoopTracer, defineCredentialScope } from '@openagentcore/kernel';
 import {
   DockerSandbox,
   MYSQL_STORE_CAPABILITIES,
@@ -12,7 +12,11 @@ import {
   REDIS_STORE_CAPABILITIES,
   RedisStore,
   SQLITE_STORE_CAPABILITIES,
+  EncryptedFileVault,
+  EnvironmentVault,
+  environmentVariableForScope,
   SqliteStore,
+  writeEncryptedVaultFile,
 } from '@openagentcore/standard';
 import { OpenAICompatibleModel } from '@openagentcore/standard/model';
 
@@ -21,6 +25,7 @@ import type {
   SandboxConformanceAdapter,
   StoreConformanceAdapter,
   TraceConformanceAdapter,
+  VaultConformanceAdapter,
 } from './types.js';
 
 export function defaultModelAdapters(): readonly ModelConformanceAdapter[] {
@@ -114,6 +119,91 @@ export function defaultTraceAdapters(): readonly TraceConformanceAdapter[] {
         }),
     },
   ];
+}
+
+export function defaultVaultAdapters(): readonly VaultConformanceAdapter[] {
+  return [environmentVaultAdapter(), encryptedFileVaultAdapter()];
+}
+
+function environmentVaultAdapter(): VaultConformanceAdapter {
+  return {
+    name: '@openagentcore/standard/environment-vault',
+    create: async (material) => vaultFixture(material, (options) => new EnvironmentVault(options)),
+  };
+}
+
+function encryptedFileVaultAdapter(): VaultConformanceAdapter {
+  const filename = join(tmpdir(), `oac-vault-conformance-${randomUUID()}.json`);
+  const passphrase = randomBytes(32).toString('base64url');
+  return {
+    name: '@openagentcore/standard/encrypted-file-vault',
+    create: async (material) => {
+      const scopes = conformanceScopes();
+      await writeEncryptedVaultFile({
+        filename,
+        passphrase,
+        credentials: {
+          [scopes.primary.id]: material,
+          [scopes.other.id]: material,
+        },
+      });
+      return vaultFixture(
+        material,
+        (options) => new EncryptedFileVault({ ...options, filename, passphrase }),
+        scopes,
+      );
+    },
+    dispose: async () => rm(filename, { force: true }),
+  };
+}
+
+function vaultFixture(
+  material: string,
+  create: (
+    options: ConstructorParameters<typeof EnvironmentVault>[0],
+  ) => EnvironmentVault | EncryptedFileVault,
+  scopes = conformanceScopes(),
+): Awaited<ReturnType<VaultConformanceAdapter['create']>> {
+  let now = Date.now();
+  let authenticated = false;
+  const environment = {
+    [environmentVariableForScope(scopes.primary.id)]: material,
+    [environmentVariableForScope(scopes.other.id)]: material,
+  };
+  const vault = create({
+    environment,
+    ttlMs: 100,
+    now: () => now,
+    fetch: async (_input, init) => {
+      authenticated = new Headers(init?.headers).get('authorization') === `Bearer ${material}`;
+      return new Response(null, { status: 204 });
+    },
+  });
+  return {
+    vault,
+    primaryScope: scopes.primary,
+    otherScope: scopes.other,
+    primaryRequest: { url: 'https://vault-conformance.invalid/a/use', method: 'POST' },
+    otherRequest: { url: 'https://vault-conformance.invalid/b/use', method: 'POST' },
+    advanceClock: (ms) => {
+      now += ms;
+    },
+    authenticated: () => authenticated,
+  };
+}
+
+function conformanceScopes(): {
+  readonly primary: ReturnType<typeof defineCredentialScope>;
+  readonly other: ReturnType<typeof defineCredentialScope>;
+} {
+  return {
+    primary: defineCredentialScope('conformance/a', {
+      targets: [{ urlPrefix: 'https://vault-conformance.invalid/a', methods: ['POST'] }],
+    }),
+    other: defineCredentialScope('conformance/b', {
+      targets: [{ urlPrefix: 'https://vault-conformance.invalid/b', methods: ['POST'] }],
+    }),
+  };
 }
 
 async function availabilityProbe(

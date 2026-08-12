@@ -6,9 +6,12 @@ import type {
   StorePort,
   StoreCapabilities,
   TracePort,
+  VaultPort,
+  CredentialRequest,
+  CredentialScope,
 } from '@openagentcore/kernel';
 
-export type ConformancePort = 'model' | 'sandbox' | 'store' | 'trace';
+export type ConformancePort = 'model' | 'sandbox' | 'store' | 'trace' | 'vault';
 export type ConformanceStatus = 'passed' | 'failed' | 'skipped';
 
 export interface ConformanceCaseResult {
@@ -59,4 +62,20 @@ export interface StoreConformanceAdapter {
 export interface TraceConformanceAdapter {
   readonly name: string;
   create(): TracePort;
+}
+
+export interface VaultConformanceInstance {
+  readonly vault: VaultPort;
+  readonly primaryScope: CredentialScope;
+  readonly otherScope: CredentialScope;
+  readonly primaryRequest: CredentialRequest;
+  readonly otherRequest: CredentialRequest;
+  advanceClock(ms: number): void;
+  authenticated(): boolean;
+}
+
+export interface VaultConformanceAdapter {
+  readonly name: string;
+  create(material: string): Promise<VaultConformanceInstance>;
+  dispose?(): Promise<void>;
 }
