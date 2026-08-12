@@ -147,7 +147,7 @@ async function expectRejected(operation: Promise<unknown>, reason: unknown): Pro
     if (error === reason) {
       return;
     }
-    throw new Error(`cancellation changed to ${stableError(error)}`);
+    throw new Error(`cancellation changed to ${stableError(error)}`, { cause: error });
   }
   throw new Error('operation resolved after cancellation');
 }

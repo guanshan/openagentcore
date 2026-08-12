@@ -43,6 +43,7 @@ describe('Port conformance suites', () => {
       },
       countTokens: async () => 1,
       stream: async function* () {
+        yield* [];
         throw new Error('streaming is not actually supported');
       },
     };
