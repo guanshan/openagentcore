@@ -27,6 +27,10 @@
     "./trace": {
       "types": "./dist/trace/index.d.ts",
       "import": "./dist/trace/index.js"
+    },
+    "./vault": {
+      "types": "./dist/vault/index.d.ts",
+      "import": "./dist/vault/index.js"
     }
   },
   "files": [
