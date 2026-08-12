@@ -1,4 +1,10 @@
-import type { JsonObject, JsonValue } from '../events/types.js';
+import type {
+  ActionCommandDescriptor,
+  ActionDescriptor,
+  ActionPathDescriptor,
+  JsonObject,
+  JsonValue,
+} from '../events/types.js';
 
 export interface ToolPermissionDescriptor extends JsonObject {
   readonly kind: string;
@@ -20,7 +26,14 @@ export interface ToolPort {
   readonly name: string;
   readonly inputSchema: JsonObject;
   readonly permission: ToolPermissionDescriptor;
+  /** Resolves resource-specific permission material before policy evaluation. */
+  describeAction?(args: JsonValue, signal: AbortSignal): Promise<ToolActionDetails>;
   execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult>;
+}
+
+export interface ToolActionDetails extends JsonObject {
+  readonly paths?: ActionPathDescriptor;
+  readonly command?: ActionCommandDescriptor;
 }
 
 export type Tool = ToolPort;
@@ -44,6 +57,29 @@ export class ToolContractError extends Error {
     this.name = 'ToolContractError';
     this.tool = tool;
   }
+}
+
+const reservedActionFields = new Set(['tool', 'args', 'permission']);
+
+export async function describeToolAction(
+  tool: Tool,
+  args: JsonValue,
+  signal: AbortSignal,
+): Promise<ActionDescriptor> {
+  signal.throwIfAborted();
+  const details = tool.describeAction === undefined ? {} : await tool.describeAction(args, signal);
+  signal.throwIfAborted();
+  for (const field of reservedActionFields) {
+    if (field in details) {
+      throw new ToolContractError(tool.name, `describeAction must not override ${field}`);
+    }
+  }
+  return Object.freeze({
+    tool: tool.name,
+    args: structuredClone(args),
+    permission: structuredClone(tool.permission),
+    ...structuredClone(details),
+  });
 }
 
 export class ToolRegistry {

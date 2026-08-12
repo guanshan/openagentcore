@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 
 export interface FileSnapshot {
   readonly path: string;
@@ -79,9 +79,18 @@ export class RepositoryWorkspace {
   async resolveWrite(path: string): Promise<string> {
     const candidate = isAbsolute(path) ? resolve(path) : resolve(this.root, path);
     this.assertInside(candidate, path);
+    try {
+      const canonical = await realpath(candidate);
+      this.assertInside(canonical, path);
+      return canonical;
+    } catch (error) {
+      if (!isMissingPath(error)) {
+        throw error;
+      }
+    }
     const canonicalParent = await realpath(dirname(candidate));
     this.assertInside(canonicalParent, path);
-    return candidate;
+    return resolve(canonicalParent, basename(candidate));
   }
 
   #assertRelative(path: string): boolean {
@@ -94,6 +103,15 @@ export class RepositoryWorkspace {
       throw new RepositoryBoundaryError(requested);
     }
   }
+}
+
+function isMissingPath(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { readonly code?: unknown }).code === 'ENOENT'
+  );
 }
 
 function freezeSnapshot(root: string, absolute: string, content: string): FileSnapshot {

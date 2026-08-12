@@ -3,7 +3,9 @@ import { join, relative, sep } from 'node:path';
 
 import type {
   JsonObject,
+  JsonValue,
   Tool,
+  ToolActionDetails,
   ToolExecutionRequest,
   ToolExecutionResult,
   ToolPermissionDescriptor,
@@ -44,12 +46,35 @@ abstract class WorkspaceTool implements Tool {
     request: ToolExecutionRequest,
     signal: AbortSignal,
   ): Promise<ToolExecutionResult>;
+
+  protected async pathAction(
+    args: JsonValue,
+    access: 'read' | 'write',
+  ): Promise<ToolActionDetails> {
+    const input = inputObject(this.name, args);
+    const requested = stringInput(this.name, input, 'path');
+    const path =
+      access === 'read'
+        ? await this.workspace.resolveExisting(requested)
+        : await this.workspace.resolveWrite(requested);
+    return {
+      paths: {
+        root: this.workspace.root,
+        read: access === 'read' ? [path] : [],
+        write: access === 'write' ? [path] : [],
+      },
+    };
+  }
 }
 
 export class ReadFileTool extends WorkspaceTool {
   readonly name = 'coding.read-file';
   readonly inputSchema = pathSchema;
   readonly permission = readPermission;
+
+  async describeAction(args: JsonValue): Promise<ToolActionDetails> {
+    return this.pathAction(args, 'read');
+  }
 
   async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     signal.throwIfAborted();
@@ -77,6 +102,10 @@ export class ExactReplaceTool extends WorkspaceTool {
     additionalProperties: false,
   });
   readonly permission = writePermission;
+
+  async describeAction(args: JsonValue): Promise<ToolActionDetails> {
+    return this.pathAction(args, 'write');
+  }
 
   async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     signal.throwIfAborted();
@@ -114,6 +143,10 @@ export class ApplyPatchTool extends WorkspaceTool {
   });
   readonly permission = writePermission;
 
+  async describeAction(args: JsonValue): Promise<ToolActionDetails> {
+    return this.pathAction(args, 'write');
+  }
+
   async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     signal.throwIfAborted();
     const args = inputObject(this.name, request.args);
@@ -141,6 +174,12 @@ export class GlobTool extends WorkspaceTool {
   });
   readonly permission = readPermission;
 
+  async describeAction(): Promise<ToolActionDetails> {
+    return {
+      paths: { root: this.workspace.root, read: [this.workspace.root], write: [] },
+    };
+  }
+
   async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     signal.throwIfAborted();
     const args = inputObject(this.name, request.args);
@@ -163,6 +202,12 @@ export class GrepTool extends WorkspaceTool {
     additionalProperties: false,
   });
   readonly permission = readPermission;
+
+  async describeAction(): Promise<ToolActionDetails> {
+    return {
+      paths: { root: this.workspace.root, read: [this.workspace.root], write: [] },
+    };
+  }
 
   async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     signal.throwIfAborted();

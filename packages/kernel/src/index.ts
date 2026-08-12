@@ -29,6 +29,8 @@ export type {
 
 export type {
   ActionDescriptor,
+  ActionCommandDescriptor,
+  ActionPathDescriptor,
   AgentDefinitionSummary,
   AgentEvent,
   AgentEventType,
@@ -118,6 +120,7 @@ export type {
 } from './ports/model.js';
 
 export {
+  describeToolAction,
   EchoTool,
   FailingTool,
   ResultFailingTool,
@@ -128,6 +131,7 @@ export {
 } from './tools/tool.js';
 export type {
   Tool,
+  ToolActionDetails,
   ToolExecutionRequest,
   ToolExecutionResult,
   ToolPermissionDescriptor,

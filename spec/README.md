@@ -40,7 +40,7 @@
 本代际对 design.md §4.1 中尚未展开的类型采用以下最小定义：
 
 - `UserInput` 是带字符串 `content` 的封闭对象。
-- `ActionDescriptor` 保留为 JSON 对象。L0 仍把 `ContextAssembly` 作为开放 JSON 对象；TypeScript 参考实现定义了可检查的 messages、tools、阶段、segment、来源、token 与能力降级字段。
+- `ActionDescriptor` 在 L0 仍保留为可扩展 JSON 对象，以兼容旧事件。TypeScript 参考实现新写入的工具审批描述包含 tool、args、permission，可选的规范绝对读/写路径集合（含 workspace root）以及命令文本/解析后的可执行名；Permission Strategy 与恢复流程消费同一份持久化描述。L0 仍把 `ContextAssembly` 作为开放 JSON 对象；TypeScript 参考实现定义了可检查的 messages、tools、阶段、segment、来源、token 与能力降级字段。
 - `TextOrToolDelta` 分为 `{ kind: "text", text }` 与 `{ kind: "tool", toolCallDelta }`；工具增量暂保留为任意 JSON 值。
 - `ToolResult`、工具 `args` 是任意 JSON 值，不接受 `undefined`、函数等非 JSON 数据。
 - `EventRange` 使用包含端点的 `fromSeq` 与 `toSeq`，并满足 `0 <= fromSeq <= toSeq < compaction event seq`。跨字段大小关系由投影语义校验。

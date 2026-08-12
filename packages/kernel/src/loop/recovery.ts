@@ -1,4 +1,5 @@
 import type { AgentEvent } from '../events/types.js';
+import { describeToolAction } from '../tools/tool.js';
 import type { PendingToolCallState, SessionReplayState } from './session-state.js';
 import { runMemoryPipeline } from './context.js';
 import {
@@ -79,12 +80,19 @@ export async function recoverActiveStep(
       );
       continue;
     }
+    const action =
+      permission.action.tool === tool.name &&
+      'args' in permission.action &&
+      permission.action.permission !== undefined
+        ? permission.action
+        : await describeToolAction(tool, call.args, signal);
     const decision = await runtime.permission.apply(
       {
         tool: tool.name,
         groups: runtime.tools.groupsFor(tool.name),
         permission: tool.permission,
         args: call.args,
+        action,
       },
       strategyContext(runtime, signal, activeTurn.turnId, activeStep.stepId),
     );

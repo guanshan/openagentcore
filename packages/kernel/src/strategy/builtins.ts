@@ -1,4 +1,4 @@
-import type { EventRange, JsonValue } from '../events/types.js';
+import type { ActionDescriptor, EventRange, JsonValue } from '../events/types.js';
 import { ModelPortError } from '../ports/model.js';
 import type { ToolPermissionDescriptor } from '../tools/tool.js';
 import {
@@ -184,6 +184,7 @@ export interface PermissionStrategyInput {
   readonly groups: readonly string[];
   readonly permission: ToolPermissionDescriptor;
   readonly args: JsonValue;
+  readonly action: ActionDescriptor;
 }
 
 export type PermissionDecision = 'allow' | 'deny';
@@ -226,6 +227,13 @@ export interface PolicyRule {
   readonly tool?: string;
   readonly group?: string;
   readonly permissionKind?: string;
+  /** Shell-style glob matched against canonical paths (relative to action.paths.root by default). */
+  readonly path?: string;
+  readonly pathAccess?: 'read' | 'write' | 'any';
+  /** Shell-style glob matched against the exact command text. */
+  readonly command?: string;
+  /** Shell-style glob matched against the parsed executable name. */
+  readonly executable?: string;
 }
 
 export interface PolicyFileConfig {
@@ -251,9 +259,24 @@ export class PolicyFilePermissionStrategy implements Strategy<
       if (
         rule.tool === undefined &&
         rule.group === undefined &&
-        rule.permissionKind === undefined
+        rule.permissionKind === undefined &&
+        rule.path === undefined &&
+        rule.command === undefined &&
+        rule.executable === undefined
       ) {
         throw new StrategyConfigError(`Policy rule ${index} must contain a selector.`);
+      }
+      if (rule.pathAccess !== undefined && rule.path === undefined) {
+        throw new StrategyConfigError(`Policy rule ${index} pathAccess requires path.`);
+      }
+      for (const [field, pattern] of [
+        ['path', rule.path],
+        ['command', rule.command],
+        ['executable', rule.executable],
+      ] as const) {
+        if (pattern !== undefined && (pattern.length === 0 || pattern.includes('\0'))) {
+          throw new StrategyConfigError(`Policy rule ${index} ${field} must be a non-empty glob.`);
+        }
       }
     }
     this.#config = structuredClone(config);
@@ -506,6 +529,74 @@ function policyMatches(rule: PolicyRule, input: PermissionStrategyInput): boolea
   return (
     (rule.tool === undefined || rule.tool === input.tool) &&
     (rule.group === undefined || input.groups.includes(rule.group)) &&
-    (rule.permissionKind === undefined || rule.permissionKind === input.permission.kind)
+    (rule.permissionKind === undefined || rule.permissionKind === input.permission.kind) &&
+    policyPathMatches(rule, input.action) &&
+    (rule.command === undefined ||
+      (input.action.command !== undefined &&
+        globMatches(rule.command, input.action.command.text))) &&
+    (rule.executable === undefined ||
+      (input.action.command !== undefined &&
+        globMatches(rule.executable, input.action.command.executable)))
   );
+}
+
+function policyPathMatches(rule: PolicyRule, action: ActionDescriptor): boolean {
+  if (rule.path === undefined) {
+    return true;
+  }
+  const paths = action.paths;
+  if (paths === undefined) {
+    return false;
+  }
+  const candidates =
+    rule.pathAccess === 'read'
+      ? paths.read
+      : rule.pathAccess === 'write'
+        ? paths.write
+        : [...paths.read, ...paths.write];
+  if (candidates.length === 0) {
+    return false;
+  }
+  return candidates.every((candidate) => {
+    const comparable = rule.path?.startsWith('/')
+      ? normalizeGlobPath(candidate)
+      : relativePolicyPath(paths.root, candidate);
+    return globMatches(rule.path ?? '', comparable);
+  });
+}
+
+function relativePolicyPath(root: string, path: string): string {
+  const normalizedRoot = normalizeGlobPath(root).replace(/\/$/, '');
+  const normalizedPath = normalizeGlobPath(path);
+  if (normalizedPath === normalizedRoot) {
+    return '.';
+  }
+  const prefix = `${normalizedRoot}/`;
+  return normalizedPath.startsWith(prefix) ? normalizedPath.slice(prefix.length) : normalizedPath;
+}
+
+function normalizeGlobPath(value: string): string {
+  return value.replaceAll('\\', '/');
+}
+
+function globMatches(pattern: string, value: string): boolean {
+  let expression = '^';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    const next = pattern[index + 1];
+    if (character === '*' && next === '*' && pattern[index + 2] === '/') {
+      expression += '(?:.*/)?';
+      index += 2;
+    } else if (character === '*' && next === '*') {
+      expression += '.*';
+      index += 1;
+    } else if (character === '*') {
+      expression += '[^/]*';
+    } else if (character === '?') {
+      expression += '[^/]';
+    } else {
+      expression += character?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') ?? '';
+    }
+  }
+  return new RegExp(`${expression}$`).test(value);
 }

@@ -1,6 +1,8 @@
 import type {
   JsonObject,
+  JsonValue,
   Tool,
+  ToolActionDetails,
   ToolExecutionRequest,
   ToolExecutionResult,
   ToolPermissionDescriptor,
@@ -64,6 +66,12 @@ export class GitCreateBranchTool extends GitTool {
   });
   readonly permission = gitWritePermission;
 
+  async describeAction(): Promise<ToolActionDetails> {
+    return {
+      paths: { root: this.workspace.root, read: [], write: [this.workspace.root] },
+    };
+  }
+
   async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     const args = inputObject(this.name, request.args);
     const branch = stringInput(this.name, args, 'branch');
@@ -83,6 +91,12 @@ export class GitDiffTool extends GitTool {
     additionalProperties: false,
   });
   readonly permission = gitReadPermission;
+
+  async describeAction(): Promise<ToolActionDetails> {
+    return {
+      paths: { root: this.workspace.root, read: [this.workspace.root], write: [] },
+    };
+  }
 
   async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     const args = inputObject(this.name, request.args);
@@ -107,6 +121,18 @@ export class GitCommitTool extends GitTool {
     additionalProperties: false,
   });
   readonly permission = gitWritePermission;
+
+  async describeAction(argsValue: JsonValue): Promise<ToolActionDetails> {
+    const args = inputObject(this.name, argsValue);
+    const paths = stringArrayInput(this.name, args, 'paths');
+    return {
+      paths: {
+        root: this.workspace.root,
+        read: [],
+        write: await Promise.all(paths.map((path) => this.workspace.resolveWrite(path))),
+      },
+    };
+  }
 
   async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     const args = inputObject(this.name, request.args);

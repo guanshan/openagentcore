@@ -2,13 +2,22 @@ import { spawn } from 'node:child_process';
 
 import type {
   JsonObject,
+  JsonValue,
   Tool,
+  ToolActionDetails,
   ToolExecutionRequest,
   ToolExecutionResult,
   ToolPermissionDescriptor,
 } from '@openagentcore/kernel';
 
-import { failed, inputObject, optionalStringInput, stringInput, succeeded } from './contract.js';
+import {
+  CodingToolInputError,
+  failed,
+  inputObject,
+  optionalStringInput,
+  stringInput,
+  succeeded,
+} from './contract.js';
 import type { RepositoryWorkspace } from './workspace.js';
 
 export interface ProcessRunOptions {
@@ -64,6 +73,24 @@ export class RunCommandTool implements Tool {
     this.#maxOutputBytes = options.maxOutputBytes ?? 1_000_000;
   }
 
+  async describeAction(argsValue: JsonValue): Promise<ToolActionDetails> {
+    const args = inputObject(this.name, argsValue);
+    const command = stringInput(this.name, args, 'command');
+    const requestedCwd = optionalStringInput(this.name, args, 'cwd');
+    const cwd =
+      requestedCwd === undefined
+        ? this.#workspace.root
+        : await this.#workspace.resolveExisting(requestedCwd);
+    return {
+      paths: {
+        root: this.#workspace.root,
+        read: [cwd],
+        write: [cwd],
+      },
+      command: { text: command, executable: commandExecutable(command) },
+    };
+  }
+
   async execute(request: ToolExecutionRequest, signal: AbortSignal): Promise<ToolExecutionResult> {
     signal.throwIfAborted();
     const args = inputObject(this.name, request.args);
@@ -103,6 +130,69 @@ export function dangerousCommandRule(command: string): string | undefined {
     ['fork-bomb', /:\(\)\s*\{\s*:\|:\s*&\s*\}\s*;\s*:/],
   ];
   return rules.find(([, pattern]) => pattern.test(normalized))?.[0];
+}
+
+export function commandExecutable(command: string): string {
+  const words = shellWords(command);
+  let index = 0;
+  while (index < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? '')) {
+    index += 1;
+  }
+  if (words[index] === 'env') {
+    index += 1;
+    while (
+      index < words.length &&
+      ((words[index] ?? '').startsWith('-') || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[index] ?? ''))
+    ) {
+      index += 1;
+    }
+  }
+  const executable = words[index];
+  if (executable === undefined || executable.length === 0) {
+    throw new CodingToolInputError('coding.run-command', 'command must contain an executable.');
+  }
+  return executable.split(/[\\/]/).at(-1) ?? executable;
+}
+
+function shellWords(command: string): readonly string[] {
+  const words: string[] = [];
+  let word = '';
+  let quote: "'" | '"' | undefined;
+  let escaped = false;
+  const push = (): void => {
+    if (word.length > 0) {
+      words.push(word);
+      word = '';
+    }
+  };
+  for (const character of command.trim()) {
+    if (escaped) {
+      word += character;
+      escaped = false;
+    } else if (character === '\\' && quote !== "'") {
+      escaped = true;
+    } else if (quote !== undefined) {
+      if (character === quote) {
+        quote = undefined;
+      } else {
+        word += character;
+      }
+    } else if (character === "'" || character === '"') {
+      quote = character;
+    } else if (/\s/.test(character)) {
+      push();
+    } else if (';&|'.includes(character)) {
+      push();
+      break;
+    } else {
+      word += character;
+    }
+  }
+  if (escaped || quote !== undefined) {
+    throw new CodingToolInputError('coding.run-command', 'command contains an unfinished quote.');
+  }
+  push();
+  return words;
 }
 
 export function runProcess(
