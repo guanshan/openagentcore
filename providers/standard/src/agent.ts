@@ -17,6 +17,8 @@ import type {
   StrategyRegistry,
   StrategySelection,
   TracePort,
+  SandboxPort,
+  VaultPort,
   Tool,
   ToolRegistrationOptions,
 } from '@openagentcore/kernel';
@@ -64,6 +66,8 @@ export interface CreateAgentOptions extends AgentConfigInput {
   readonly modelPort?: ModelPort;
   readonly eventLog?: EventLog;
   readonly trace?: TracePort;
+  readonly sandbox?: SandboxPort;
+  readonly vault?: VaultPort;
 }
 
 export interface PromptOverrideOptions {
@@ -168,6 +172,8 @@ const CREATE_AGENT_KEYS = new Set([
   'modelPort',
   'eventLog',
   'trace',
+  'sandbox',
+  'vault',
   'identity',
   'model',
 ]);
@@ -196,6 +202,8 @@ export class AgentBuilder {
   #modelPort: ModelPort | undefined;
   #eventLog: EventLog | undefined;
   #tracePort: TracePort | undefined;
+  #sandboxPort: SandboxPort | undefined;
+  #vaultPort: VaultPort | undefined;
   #strategyRegistry: StrategyRegistry | undefined;
 
   private constructor(preset: AgentPreset) {
@@ -242,6 +250,16 @@ export class AgentBuilder {
 
   trace(trace: TracePort): this {
     this.#tracePort = trace;
+    return this;
+  }
+
+  sandbox(sandbox: SandboxPort): this {
+    this.#sandboxPort = sandbox;
+    return this;
+  }
+
+  vault(vault: VaultPort): this {
+    this.#vaultPort = vault;
     return this;
   }
 
@@ -404,6 +422,8 @@ export class AgentBuilder {
       strategies: { ...this.#strategySelections },
       strategyRegistry,
       ...(this.#tracePort === undefined ? {} : { trace: this.#tracePort }),
+      ...(this.#sandboxPort === undefined ? {} : { sandbox: this.#sandboxPort }),
+      ...(this.#vaultPort === undefined ? {} : { vault: this.#vaultPort }),
     });
     for (const install of this.#middlewareInstallers) {
       install(loop);
@@ -462,6 +482,12 @@ export function createAgent(options: CreateAgentOptions = {}): AgentLoop {
   }
   if (options.trace !== undefined) {
     builder.trace(options.trace);
+  }
+  if (options.sandbox !== undefined) {
+    builder.sandbox(options.sandbox);
+  }
+  if (options.vault !== undefined) {
+    builder.vault(options.vault);
   }
   return builder.build();
 }

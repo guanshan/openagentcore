@@ -112,6 +112,7 @@ export async function runSandboxConformance(
       cases: Object.freeze(cases),
     });
   } finally {
+    await sandbox.close?.();
     await rm(root, { recursive: true, force: true });
   }
 }

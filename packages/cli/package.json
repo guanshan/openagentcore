@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@openagentcore/kernel": "workspace:*",
-    "@openagentcore/standard": "workspace:*"
+    "@openagentcore/standard": "workspace:*",
+    "@openagentcore/tencent": "workspace:*"
   }
 }

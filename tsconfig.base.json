@@ -26,7 +26,12 @@
       "@openagentcore/standard/model": ["providers/standard/src/model/index.ts"],
       "@openagentcore/standard/sandbox": ["providers/standard/src/sandbox/index.ts"],
       "@openagentcore/standard/store": ["providers/standard/src/store/index.ts"],
-      "@openagentcore/standard/trace": ["providers/standard/src/trace/index.ts"]
+      "@openagentcore/standard/trace": ["providers/standard/src/trace/index.ts"],
+      "@openagentcore/standard/vault": ["providers/standard/src/vault/index.ts"],
+      "@openagentcore/tencent": ["providers/tencent/src/index.ts"],
+      "@openagentcore/tencent/model": ["providers/tencent/src/model/index.ts"],
+      "@openagentcore/tencent/sandbox": ["providers/tencent/src/sandbox/index.ts"],
+      "@openagentcore/tencent/trace": ["providers/tencent/src/trace/index.ts"]
     }
   }
 }

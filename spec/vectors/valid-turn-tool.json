@@ -111,11 +111,23 @@
       "reason": "read-only tool"
     },
     {
-      "type": "tool.result",
+      "type": "credential.used",
       "seq": 9,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
       "ts": "2026-08-11T06:00:09Z",
+      "stepId": "step-1",
+      "callId": "call-1",
+      "tool": "read_file",
+      "scope": "repository/read",
+      "attempt": 1
+    },
+    {
+      "type": "tool.result",
+      "seq": 10,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:10Z",
       "stepId": "step-1",
       "callId": "call-1",
       "outcome": "succeeded",
@@ -124,10 +136,10 @@
     },
     {
       "type": "step.finished",
-      "seq": 10,
+      "seq": 11,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
-      "ts": "2026-08-11T06:00:10Z",
+      "ts": "2026-08-11T06:00:11Z",
       "turnId": "turn-1",
       "stepId": "step-1",
       "outcome": "succeeded",
@@ -140,27 +152,27 @@
     },
     {
       "type": "compaction.applied",
-      "seq": 11,
+      "seq": 12,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
-      "ts": "2026-08-11T06:00:11Z",
+      "ts": "2026-08-11T06:00:12Z",
       "summary": "The file read was requested.",
       "dropped": { "fromSeq": 0, "toSeq": 5 }
     },
     {
       "type": "checkpoint.created",
-      "seq": 12,
-      "tenantId": "tenant-demo",
-      "sessionId": "session-turn-tool",
-      "ts": "2026-08-11T06:00:12Z",
-      "snapshotRef": "snapshot-1"
-    },
-    {
-      "type": "turn.finished",
       "seq": 13,
       "tenantId": "tenant-demo",
       "sessionId": "session-turn-tool",
       "ts": "2026-08-11T06:00:13Z",
+      "snapshotRef": "snapshot-1"
+    },
+    {
+      "type": "turn.finished",
+      "seq": 14,
+      "tenantId": "tenant-demo",
+      "sessionId": "session-turn-tool",
+      "ts": "2026-08-11T06:00:14Z",
       "turnId": "turn-1",
       "stopReason": "completed",
       "usage": {

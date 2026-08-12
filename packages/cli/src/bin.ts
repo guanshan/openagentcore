@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
@@ -9,12 +10,14 @@ import {
   defaultSandboxAdapters,
   defaultStoreAdapters,
   defaultTraceAdapters,
+  defaultVaultAdapters,
   formatCapabilityMatrix,
   formatHumanReport,
   runModelConformance,
   runSandboxConformance,
   runStoreConformance,
   runTraceConformance,
+  runVaultConformance,
 } from './conformance/index.js';
 
 const options = parseArgs(process.argv.slice(2));
@@ -30,6 +33,9 @@ for (const adapter of defaultStoreAdapters()) {
 }
 for (const adapter of defaultTraceAdapters()) {
   suites.push(await runTraceConformance(adapter));
+}
+for (const adapter of defaultVaultAdapters()) {
+  suites.push(await runVaultConformance(adapter, randomBytes(32).toString('base64url')));
 }
 const report = createConformanceReport(suites);
 

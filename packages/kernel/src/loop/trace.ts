@@ -141,6 +141,14 @@ export class AgentTraceLifecycle {
         this.#tools.delete(event.callId);
         return;
       }
+      case 'credential.used': {
+        const active = this.#tools.get(event.callId);
+        active?.span.setAttributes({
+          'openagentcore.credential.scope': event.scope,
+          'openagentcore.credential.attempt': event.attempt,
+        });
+        return;
+      }
       case 'step.finished': {
         this.#finishModel(event.stepId);
         this.#recordUsage(event.usage);

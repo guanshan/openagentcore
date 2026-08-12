@@ -137,6 +137,8 @@ export class DockerSandbox implements SandboxPort {
       command: [request.command, ...(request.args ?? [])].join(' '),
     });
   }
+
+  async close(): Promise<void> {}
 }
 
 function summarizeFailure(result: SandboxExecResult): string {

@@ -1,10 +1,10 @@
 # @openagentcore/kernel（L1）
 
-`@openagentcore/kernel` 是运行时依赖为零的事件溯源内核。当前提供 AgentEvent、EventLog、SnapshotStore、消息与 Session 投影、可恢复的 `AgentLoop`、Model/Tool/Sandbox/Store/Trace Port、Strategy 注册表及五条 Middleware 管道。
+`@openagentcore/kernel` 是运行时依赖为零的事件溯源内核。当前提供 AgentEvent、EventLog、SnapshotStore、消息与 Session 投影、可恢复的 `AgentLoop`、Model/Tool/Sandbox/Store/Trace/Vault Port、Strategy 注册表及五条 Middleware 管道。
 
 `ScriptedModelPort` 与测试工具用于确定性测试和示例，不包含真实 Model Provider；Runtime、UI 与 CLI 位于上层包。
 
-`StorePort` 只定义 byte-native KV 与按身份打开 EventLog 的 provider-neutral 边界；数据库驱动和持久化能力声明在 L2 Provider。`TracePort` 使用显式 parent 的 portable span/metric 数据，内置 `NoopTracer` Null Object；AgentLoop 在未注入 exporter 时不会产生 IO，也不依赖 OpenTelemetry SDK。
+`StorePort` 只定义 byte-native KV 与按身份打开 EventLog 的 provider-neutral 边界；数据库驱动和持久化能力声明在 L2 Provider。`TracePort` 使用显式 parent 的 portable span/metric 数据，内置 `NoopTracer` Null Object；AgentLoop 在未注入 exporter 时不会产生 IO，也不依赖 OpenTelemetry SDK。`VaultPort` 只向工具签发带过期/刷新语义的不透明 scoped 请求代理；`withCredential(scope)` 在执行期注入，并以 `credential.used` 记录 audit-safe scope，不把认证 material 放进工具、事件或 trace。
 
 ## Permission policy 规则
 

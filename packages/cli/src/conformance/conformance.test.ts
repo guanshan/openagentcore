@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,8 +12,13 @@ import {
   type SandboxPort,
   type StorePort,
   type TracePort,
+  defineCredentialScope,
 } from '@openagentcore/kernel';
-import { SqliteStore } from '@openagentcore/standard';
+import {
+  EnvironmentVault,
+  SqliteStore,
+  environmentVariableForScope,
+} from '@openagentcore/standard';
 import { describe, expect, it } from 'vitest';
 
 import { runModelConformance } from './model.js';
@@ -21,6 +26,7 @@ import { createConformanceReport, formatCapabilityMatrix, formatHumanReport } fr
 import { runSandboxConformance } from './sandbox.js';
 import { runStoreConformance } from './store.js';
 import { runTraceConformance } from './trace.js';
+import { runVaultConformance } from './vault.js';
 
 describe('Port conformance suites', () => {
   it('passes honest model and local sandbox adapters', async () => {
@@ -69,6 +75,24 @@ describe('Port conformance suites', () => {
         status: 'failed',
       }),
     );
+  });
+
+  it('does not label unavailable live model and trace capabilities as passed', async () => {
+    const model = await runModelConformance({
+      name: 'live-model',
+      capabilities: { streaming: true },
+      availability: async () => ({ available: false, reason: 'credential unavailable' }),
+      create: () => new ScriptedModelPort([]),
+    });
+    const trace = await runTraceConformance({
+      name: 'live-trace',
+      capabilities: { exporter: 'otlp-http' },
+      availability: async () => ({ available: false, reason: 'endpoint unavailable' }),
+      create: () => new NoopTracer(),
+    });
+
+    expect(model).toMatchObject({ status: 'skipped', detail: 'credential unavailable' });
+    expect(trace).toMatchObject({ status: 'skipped', detail: 'endpoint unavailable' });
   });
 
   it('marks a dishonest snapshot declaration red and keeps unavailable adapters skipped', async () => {
@@ -139,6 +163,47 @@ describe('Port conformance suites', () => {
         status: 'failed',
       }),
     );
+  });
+
+  it('passes an opaque scoped vault and keeps generated material out of results', async () => {
+    const material = randomBytes(32).toString('base64url');
+    let now = Date.now();
+    const primaryScope = defineCredentialScope('test/a', {
+      targets: [{ urlPrefix: 'https://vault-test.invalid/a' }],
+    });
+    const otherScope = defineCredentialScope('test/b', {
+      targets: [{ urlPrefix: 'https://vault-test.invalid/b' }],
+    });
+    let authenticated = false;
+    const result = await runVaultConformance(
+      {
+        name: 'honest-vault',
+        create: async (generated) => ({
+          vault: new EnvironmentVault({
+            environment: { [environmentVariableForScope(primaryScope.id)]: generated },
+            ttlMs: 100,
+            now: () => now,
+            fetch: async (_input, init) => {
+              authenticated =
+                new Headers(init?.headers).get('authorization') === `Bearer ${generated}`;
+              return new Response(null, { status: 204 });
+            },
+          }),
+          primaryScope,
+          otherScope,
+          primaryRequest: { url: 'https://vault-test.invalid/a/use' },
+          otherRequest: { url: 'https://vault-test.invalid/b/use' },
+          advanceClock: (ms) => {
+            now += ms;
+          },
+          authenticated: () => authenticated,
+        }),
+      },
+      material,
+    );
+
+    expect(result.status).toBe('passed');
+    expect(JSON.stringify(result)).not.toContain(material);
   });
 
   it('formats human, JSON-backed matrix, and overall failure consistently', () => {

@@ -160,6 +160,23 @@ const agent = AgentBuilder.fromPreset('oss-local').trace(trace).build();
 await trace.shutdown();
 ```
 
+## VaultPort
+
+环境变量 Vault 按 scope ID 读取 `OAC_VAULT_*`，并只把可过期的认证请求代理交给 `withCredential(scope)` 工具；长期值不会成为工具属性、参数、事件或 trace 内容。`CredentialScope` 必须明确允许的 URL 前缀和 method，代理拒绝跨 scope 请求与调用方覆盖受管认证 header。
+
+```ts
+import { defineCredentialScope, withCredential } from '@openagentcore/kernel';
+import { EnvironmentVault } from '@openagentcore/standard/vault';
+
+const scope = defineCredentialScope('service/read', {
+  targets: [{ urlPrefix: 'https://service.example/v1/read', methods: ['POST'] }],
+});
+const vault = new EnvironmentVault();
+const tool = withCredential(scope)(credentialAwareTool);
+```
+
+`EncryptedFileVault` 使用 AES-256-GCM 与 scrypt，文件必须是 `0600` 或更严格；`writeEncryptedVaultFile()` 负责原子写入加密 envelope。`KmsVault` 只定义 provider-owned `KmsCredentialIssuer` 桥，本里程碑不冒充任何云 KMS 实现。环境变量/文件 adapter 提供短期进程内 lease，但不会声称改变了上游静态 key 的真实生命周期；需要上游短期 token 时应使用 KMS issuer。
+
 Exporter 使用 OTLP/HTTP JSON 的 `/v1/traces` 与 `/v1/metrics`。AgentLoop 产生 `invoke_agent`、step、`chat` 与 `execute_tool` span 树；token 使用 `gen_ai.client.token.usage`，成本、step/turn/tool 延迟和 Strategy 效果使用 `openagentcore.*` 扩展指标。
 
 `captureContent` 默认 `false`，因此 prompt、模型内容和工具参数/结果不进入 trace。显式开启后，内容先经过 Record & Replay 共用的敏感 key、Bearer/API key/access token 文本规则及 `additionalSensitiveKeys`，再序列化为 attribute。OTLP headers 只用于传输，不写入 payload。

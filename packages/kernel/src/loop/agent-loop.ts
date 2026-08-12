@@ -15,6 +15,7 @@ import type {
 import type { ModelPort, ModelRequest } from '../ports/model.js';
 import type { SandboxCapabilityRequest, SandboxPort } from '../ports/sandbox.js';
 import { NoopTracer, type TracePort } from '../ports/trace.js';
+import type { VaultPort } from '../ports/vault.js';
 import { createDefaultPromptRegistry } from '../prompts/builtins.js';
 import type { PromptRegistry } from '../prompts/registry.js';
 import {
@@ -102,6 +103,7 @@ export interface AgentLoopOptions {
   /** Preferred capabilities degrade explicitly into model.request.capabilityDowngrades. */
   readonly sandboxCapabilities?: SandboxCapabilityRequest;
   readonly trace?: TracePort;
+  readonly vault?: VaultPort;
   readonly onTraceError?: TraceErrorHandler;
 }
 
@@ -168,6 +170,7 @@ export class AgentLoop {
   readonly middleware: MiddlewareRegistry;
   readonly sandbox: SandboxPort | undefined;
   readonly trace: TracePort;
+  readonly vault: VaultPort | undefined;
 
   readonly #selections: AgentLoopStrategySelections;
   readonly #now: () => string;
@@ -194,6 +197,7 @@ export class AgentLoop {
     this.middleware = new MiddlewareRegistry().use('event', this.#costAccounting);
     this.sandbox = options.sandbox;
     this.trace = options.trace ?? new NoopTracer();
+    this.vault = options.vault;
     this.#traceLifecycle = new AgentTraceLifecycle(this.trace, options.onTraceError);
     this.#selections = options.strategies ?? {};
     this.#now = options.now ?? (() => new Date().toISOString());
@@ -396,6 +400,7 @@ export class AgentLoop {
       prompts: this.prompts.snapshot(),
       middleware: this.middleware,
       ...(this.sandbox === undefined ? {} : { sandbox: this.sandbox }),
+      ...(this.vault === undefined ? {} : { vault: this.vault }),
       sandboxCapabilities: this.#sandboxCapabilities,
       permission: selected.permission,
       retry: selected.retry,
@@ -436,6 +441,7 @@ export class AgentLoop {
       tools: this.tools,
       prompts: this.prompts,
       ...(this.sandbox === undefined ? {} : { sandbox: this.sandbox }),
+      ...(this.vault === undefined ? {} : { vault: this.vault }),
     };
     const stop = selection(this.#selections.stop, defaultSelections.stop);
     const compaction = selection(this.#selections.compaction, defaultSelections.compaction);
@@ -664,6 +670,7 @@ function eventStepId(event: AgentEvent): string | undefined {
     case 'tool.result':
     case 'permission.requested':
     case 'permission.resolved':
+    case 'credential.used':
       return event.stepId;
     default:
       return undefined;
@@ -708,6 +715,9 @@ function reconcileEventForPersistence(authoritative: AgentEvent, proposed: Agent
       }
       return resolved;
     }
+    case 'credential.used':
+      // Audit correlation and scope are authoritative and never middleware-rewritable.
+      return candidate;
     case 'compaction.applied':
       return copyEventFields(candidate, proposed, ['summary', 'dropped']);
     case 'checkpoint.created':
