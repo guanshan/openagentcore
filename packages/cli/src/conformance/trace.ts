@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import type { TracePort } from '@openagentcore/kernel';
 
 import type {
@@ -21,8 +23,9 @@ export async function runTraceConformance(
       if (trace.serializeContent === undefined) {
         throw new Error('contentCapture=true requires serializeContent');
       }
-      const serialized = trace.serializeContent({ apiKey: 'trace-secret' });
-      if (serialized.includes('trace-secret')) {
+      const material = randomBytes(32).toString('base64url');
+      const serialized = trace.serializeContent({ apiKey: material });
+      if (serialized.includes(material)) {
         throw new Error('content serializer exposed a sensitive-key value');
       }
     }
