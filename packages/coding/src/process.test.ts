@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PolicyFilePermissionStrategy } from '@openagentcore/kernel';
+import { describeToolAction, PolicyFilePermissionStrategy } from '@openagentcore/kernel';
 
 import { RunCommandTool } from './process.js';
 import { RepositoryWorkspace } from './workspace.js';
@@ -62,6 +62,7 @@ describe('RunCommandTool', () => {
       expect.objectContaining({ kind: 'process-execute', description: expect.any(String) }),
     );
     const permission = new PolicyFilePermissionStrategy();
+    const action = await describeToolAction(tool, { command: 'node --version' }, signal);
     await permission.init(
       {
         defaultDecision: 'allow',
@@ -77,6 +78,7 @@ describe('RunCommandTool', () => {
           groups: ['coding/execute'],
           permission: tool.permission,
           args: { command: 'node --version' },
+          action,
         },
         {
           signal,

@@ -1,15 +1,14 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "composite": true,
     "declaration": true,
     "declarationMap": true,
     "noEmit": false,
     "outDir": "dist",
+    "paths": {},
     "rootDir": "src",
     "sourceMap": true,
-    "tsBuildInfoFile": "dist/.tsbuildinfo",
     "types": ["node"]
   },
-  "exclude": ["src/**/*.test.ts", "src/**/*.test-support.ts"]
+  "exclude": ["src/**/*.test.ts"]
 }

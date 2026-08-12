@@ -1,24 +1,19 @@
 {
-  "name": "@openagentcore/standard",
+  "name": "@openagentcore/cli",
   "version": "0.1.0",
-  "description": "Standard OpenAgentCore providers and the oss-local composition root.",
+  "description": "OpenAgentCore command-line tools and provider conformance suites.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
+  "bin": {
+    "oac": "./dist/bin.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./model": {
-      "types": "./dist/model/index.d.ts",
-      "import": "./dist/model/index.js"
-    },
-    "./sandbox": {
-      "types": "./dist/sandbox/index.d.ts",
-      "import": "./dist/sandbox/index.js"
     }
   },
   "files": [
@@ -30,12 +25,8 @@
     "test": "vitest run src",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
-  "peerDependencies": {
-    "@openagentcore/kernel": "^0.1.0"
-  },
-  "devDependencies": {
+  "dependencies": {
     "@openagentcore/kernel": "workspace:*",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1"
+    "@openagentcore/standard": "workspace:*"
   }
 }

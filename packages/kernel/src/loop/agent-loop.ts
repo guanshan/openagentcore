@@ -13,6 +13,7 @@ import type {
   UserInput,
 } from '../events/types.js';
 import type { ModelPort, ModelRequest } from '../ports/model.js';
+import type { SandboxCapabilityRequest, SandboxPort } from '../ports/sandbox.js';
 import { createDefaultPromptRegistry } from '../prompts/builtins.js';
 import type { PromptRegistry } from '../prompts/registry.js';
 import {
@@ -95,6 +96,9 @@ export interface AgentLoopOptions {
   readonly now?: () => string;
   readonly sleep?: AgentLoopSleeper;
   readonly modelStreamRetryMode?: ModelStreamRetryMode;
+  readonly sandbox?: SandboxPort;
+  /** Preferred capabilities degrade explicitly into model.request.capabilityDowngrades. */
+  readonly sandboxCapabilities?: SandboxCapabilityRequest;
 }
 
 export interface RunTurnOptions {
@@ -158,11 +162,13 @@ export class AgentLoop {
   readonly strategies: StrategyRegistry;
   readonly prompts: PromptRegistry;
   readonly middleware: MiddlewareRegistry;
+  readonly sandbox: SandboxPort | undefined;
 
   readonly #selections: AgentLoopStrategySelections;
   readonly #now: () => string;
   readonly #sleep: AgentLoopSleeper;
   readonly #modelStreamRetryMode: ModelStreamRetryMode;
+  readonly #sandboxCapabilities: SandboxCapabilityRequest;
   readonly #steering: UserInput[] = [];
   readonly #costAccounting = createCostAccountingMiddleware();
 
@@ -180,10 +186,12 @@ export class AgentLoop {
     this.strategies = options.strategyRegistry ?? createDefaultStrategyRegistry();
     this.prompts = options.prompts ?? createDefaultPromptRegistry();
     this.middleware = new MiddlewareRegistry().use('event', this.#costAccounting);
+    this.sandbox = options.sandbox;
     this.#selections = options.strategies ?? {};
     this.#now = options.now ?? (() => new Date().toISOString());
     this.#sleep = options.sleep ?? abortableDelay;
     this.#modelStreamRetryMode = options.modelStreamRetryMode ?? 'discard';
+    this.#sandboxCapabilities = Object.freeze({ ...(options.sandboxCapabilities ?? {}) });
   }
 
   use<TKind extends MiddlewareKind>(
@@ -222,6 +230,8 @@ export class AgentLoop {
             tools: this.tools,
             prompts: this.prompts.snapshot(),
             middleware: this.middleware,
+            ...(this.sandbox === undefined ? {} : { sandbox: this.sandbox }),
+            sandboxCapabilities: this.#sandboxCapabilities,
           },
           turnId,
           stepId,
@@ -377,6 +387,8 @@ export class AgentLoop {
       tools: this.tools,
       prompts: this.prompts.snapshot(),
       middleware: this.middleware,
+      ...(this.sandbox === undefined ? {} : { sandbox: this.sandbox }),
+      sandboxCapabilities: this.#sandboxCapabilities,
       permission: selected.permission,
       retry: selected.retry,
       emit: (payload, signal) => this.#emit(payload, signal),
@@ -415,6 +427,7 @@ export class AgentLoop {
       model: this.model,
       tools: this.tools,
       prompts: this.prompts,
+      ...(this.sandbox === undefined ? {} : { sandbox: this.sandbox }),
     };
     const stop = selection(this.#selections.stop, defaultSelections.stop);
     const compaction = selection(this.#selections.compaction, defaultSelections.compaction);

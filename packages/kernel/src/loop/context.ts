@@ -24,6 +24,11 @@ import type {
   ModelToolDefinition,
   ModelToolUse,
 } from '../ports/model.js';
+import {
+  negotiateSandboxCapabilities,
+  type SandboxCapabilityRequest,
+  type SandboxPort,
+} from '../ports/sandbox.js';
 import type { Prompt, PromptRegistrySnapshot } from '../prompts/registry.js';
 import type { CompactionEntry } from '../strategy/builtins.js';
 import type { Tool, ToolRegistry } from '../tools/tool.js';
@@ -54,6 +59,8 @@ export interface ContextRuntime {
   readonly tools: ToolRegistry;
   readonly prompts: PromptRegistrySnapshot;
   readonly middleware: MiddlewareRegistry;
+  readonly sandbox?: SandboxPort;
+  readonly sandboxCapabilities?: SandboxCapabilityRequest;
 }
 
 export interface ContextAssemblyDraft {
@@ -84,6 +91,13 @@ export async function assembleContext(
   const toolUse = definitions.length === 0 ? 'none' : runtime.model.capabilities.toolUse;
   const capabilityDowngrades =
     definitions.length > 0 && toolUse !== 'native' ? [`tool-use:native->${toolUse}`] : [];
+  if (runtime.sandboxCapabilities?.snapshot === true) {
+    capabilityDowngrades.push(
+      ...(runtime.sandbox === undefined
+        ? ['sandbox-snapshot:requested->unconfigured']
+        : negotiateSandboxCapabilities(runtime.sandbox, runtime.sandboxCapabilities).downgrades),
+    );
+  }
   const projection = await projectMessageHistory(runtime.eventLog.read(0));
   const history = materializeMessageHistory(projection);
   const historyAssembly = assembleHistory(history, toolUse);

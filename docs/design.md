@@ -632,7 +632,7 @@ packages/kernel/src/
 ## 附录 A：开放问题
 
 1. 已定名 **OpenAgentCore**（2026-08-11 核查 npm / PyPI / GitHub 均无占用）。遗留：与 AWS Bedrock AgentCore 的商标摩擦风险需评估，正式发布前保留改名余地。
-2. Sandbox 的文件系统语义统一（本地 FS vs 远程沙箱 FS 的路径映射与延迟差异）——需要单独设计文档。
+2. Sandbox 文件系统语义已由 [ADR 0010](adr/0010-sandbox-port-filesystem-semantics.md) 收敛为 `/workspace` POSIX 命名空间、byte-native IO、显式尺寸上限与可取消完整操作；遗留大文件流、原子版本化写和多 mount 语义待真实云 Provider 验证。
 3. 已决定采用 AG-UI 作为 UI 线协议基座（§2.3、§11.1）；遗留：审批/diff/成本等 `oac.*` 扩展事件的 schema 设计，以及是否向 AG-UI 上游提案。
 4. A2A 与 MCP 的鉴权模型如何与 Vault 打通（远端凭证委托）。
 5. 事件流的 schema 演进策略（事件版本化 vs upcaster 链）。

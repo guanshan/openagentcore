@@ -1,4 +1,4 @@
-import { ToolRegistry } from '@openagentcore/kernel';
+import { LocalProcessSandbox, ToolRegistry, type SandboxPort } from '@openagentcore/kernel';
 
 import { ApplyPatchTool, ExactReplaceTool, GlobTool, GrepTool, ReadFileTool } from './files.js';
 import { GitCommitTool, GitCreateBranchTool, GitDiffTool } from './git.js';
@@ -16,15 +16,18 @@ export interface CodingToolsetOptions {
   readonly root: string;
   readonly maxOutputBytes?: number;
   readonly gitEnvironment?: Readonly<Record<string, string | undefined>>;
+  readonly sandbox?: SandboxPort;
 }
 
 export interface CodingToolset {
   readonly workspace: RepositoryWorkspace;
   readonly registry: ToolRegistry;
+  readonly sandbox: SandboxPort;
 }
 
 export function createCodingToolset(options: CodingToolsetOptions): CodingToolset {
   const workspace = new RepositoryWorkspace(options.root);
+  const sandbox = options.sandbox ?? new LocalProcessSandbox({ root: workspace.root });
   const registry = new ToolRegistry()
     .register(new ReadFileTool(workspace), { groups: ['coding/read'] })
     .register(new GlobTool(workspace), { groups: ['coding/read'] })
@@ -32,32 +35,32 @@ export function createCodingToolset(options: CodingToolsetOptions): CodingToolse
     .register(new ExactReplaceTool(workspace), { groups: ['coding/write'] })
     .register(new ApplyPatchTool(workspace), { groups: ['coding/write'] })
     .register(
-      new RunCommandTool(
-        workspace,
-        options.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes },
-      ),
+      new RunCommandTool(workspace, {
+        sandbox,
+        ...(options.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes }),
+      }),
       { groups: ['coding/execute'] },
     )
     .register(
-      new GitCreateBranchTool(
-        workspace,
-        options.gitEnvironment === undefined ? {} : { environment: options.gitEnvironment },
-      ),
+      new GitCreateBranchTool(workspace, {
+        sandbox,
+        ...(options.gitEnvironment === undefined ? {} : { environment: options.gitEnvironment }),
+      }),
       { groups: ['coding/git'] },
     )
     .register(
-      new GitDiffTool(
-        workspace,
-        options.gitEnvironment === undefined ? {} : { environment: options.gitEnvironment },
-      ),
+      new GitDiffTool(workspace, {
+        sandbox,
+        ...(options.gitEnvironment === undefined ? {} : { environment: options.gitEnvironment }),
+      }),
       { groups: ['coding/git'] },
     )
     .register(
-      new GitCommitTool(
-        workspace,
-        options.gitEnvironment === undefined ? {} : { environment: options.gitEnvironment },
-      ),
+      new GitCommitTool(workspace, {
+        sandbox,
+        ...(options.gitEnvironment === undefined ? {} : { environment: options.gitEnvironment }),
+      }),
       { groups: ['coding/git'] },
     );
-  return Object.freeze({ workspace, registry });
+  return Object.freeze({ workspace, registry, sandbox });
 }

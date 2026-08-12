@@ -29,6 +29,8 @@ export type {
 
 export type {
   ActionDescriptor,
+  ActionCommandDescriptor,
+  ActionPathDescriptor,
   AgentDefinitionSummary,
   AgentEvent,
   AgentEventType,
@@ -95,6 +97,26 @@ export {
   ScriptedModelExhaustedError,
   ScriptedModelPort,
 } from './ports/model.js';
+
+export {
+  LocalProcessSandbox,
+  negotiateSandboxCapabilities,
+  SANDBOX_WORKSPACE_PATH,
+  SandboxBoundaryError,
+  SandboxContractError,
+  validateSandboxCapabilities,
+} from './ports/sandbox.js';
+export type {
+  LocalProcessSandboxOptions,
+  SandboxCapabilities,
+  SandboxCapabilityNegotiation,
+  SandboxCapabilityRequest,
+  SandboxExecRequest,
+  SandboxExecResult,
+  SandboxFileSystemPort,
+  SandboxPort,
+  SandboxSnapshot,
+} from './ports/sandbox.js';
 export type {
   FinishModelChunk,
   ModelCapabilities,
@@ -118,6 +140,7 @@ export type {
 } from './ports/model.js';
 
 export {
+  describeToolAction,
   EchoTool,
   FailingTool,
   ResultFailingTool,
@@ -128,6 +151,7 @@ export {
 } from './tools/tool.js';
 export type {
   Tool,
+  ToolActionDetails,
   ToolExecutionRequest,
   ToolExecutionResult,
   ToolPermissionDescriptor,

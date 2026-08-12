@@ -103,6 +103,12 @@ describe('built-in strategies', () => {
       groups: ['filesystem'],
       permission: { kind: 'write' },
       args: { path: 'README.md' },
+      action: {
+        tool: 'write-file',
+        args: { path: 'README.md' },
+        permission: { kind: 'write' },
+        paths: { root: '/repo', read: [], write: ['/repo/README.md'] },
+      },
     } as const;
     const allowAll = new AllowAllPermissionStrategy();
     await allowAll.init(undefined, {});

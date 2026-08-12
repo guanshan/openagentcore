@@ -20,9 +20,11 @@
     "ignoreDeprecations": "6.0",
     "paths": {
       "@openagentcore/kernel": ["packages/kernel/src/index.ts"],
+      "@openagentcore/cli": ["packages/cli/src/index.ts"],
       "@openagentcore/coding": ["packages/coding/src/index.ts"],
       "@openagentcore/standard": ["providers/standard/src/index.ts"],
-      "@openagentcore/standard/model": ["providers/standard/src/model/index.ts"]
+      "@openagentcore/standard/model": ["providers/standard/src/model/index.ts"],
+      "@openagentcore/standard/sandbox": ["providers/standard/src/sandbox/index.ts"]
     }
   }
 }

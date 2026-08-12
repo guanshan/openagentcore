@@ -21,6 +21,7 @@ import type {
 } from '../strategy/builtins.js';
 import type { Strategy, StrategyContext } from '../strategy/registry.js';
 import {
+  describeToolAction,
   ToolContractError,
   type Tool,
   type ToolExecutionRequest,
@@ -240,17 +241,14 @@ export async function requestPermission(
   signal: AbortSignal,
 ): Promise<PermissionStrategyOutput> {
   const reqId = `${call.callId}:permission`;
+  const action = await describeToolAction(tool, call.args, signal);
   await runtime.emit(
     {
       type: 'permission.requested',
       reqId,
       stepId,
       callId: call.callId,
-      action: {
-        tool: call.tool,
-        args: structuredClone(call.args),
-        permission: structuredClone(tool.permission),
-      },
+      action,
     },
     signal,
   );
@@ -260,6 +258,7 @@ export async function requestPermission(
       groups: runtime.tools.groupsFor(tool.name),
       permission: tool.permission,
       args: call.args,
+      action,
     },
     strategyContext(runtime, signal, turnId, stepId),
   );

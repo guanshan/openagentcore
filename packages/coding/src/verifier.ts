@@ -1,6 +1,11 @@
-import type { JsonObject } from '@openagentcore/kernel';
+import {
+  LocalProcessSandbox,
+  SANDBOX_WORKSPACE_PATH,
+  type JsonObject,
+  type SandboxPort,
+} from '@openagentcore/kernel';
 
-import { dangerousCommandRule, runProcess } from './process.js';
+import { dangerousCommandRule } from './process.js';
 import type { RepositoryWorkspace } from './workspace.js';
 
 export type VerificationOutcome = 'passed' | 'failed';
@@ -23,19 +28,20 @@ export interface Verifier {
 export class CommandVerifier implements Verifier {
   readonly name: string;
   readonly #command: string;
-  readonly #workspace: RepositoryWorkspace;
   readonly #now: () => number;
+  readonly #sandbox: SandboxPort;
 
   constructor(options: {
     readonly name: string;
     readonly command: string;
     readonly workspace: RepositoryWorkspace;
     readonly now?: () => number;
+    readonly sandbox?: SandboxPort;
   }) {
     this.name = options.name;
     this.#command = options.command;
-    this.#workspace = options.workspace;
     this.#now = options.now ?? (() => Date.now());
+    this.#sandbox = options.sandbox ?? new LocalProcessSandbox({ root: options.workspace.root });
   }
 
   async verify(signal: AbortSignal): Promise<VerificationResult> {
@@ -44,8 +50,8 @@ export class CommandVerifier implements Verifier {
       throw new Error(`Verifier command blocked by safety rule: ${rule}.`);
     }
     const startedAt = this.#now();
-    const result = await runProcess(
-      { command: this.#command, cwd: this.#workspace.root, shell: true },
+    const result = await this.#sandbox.exec(
+      { command: this.#command, cwd: SANDBOX_WORKSPACE_PATH, shell: true },
       signal,
     );
     return Object.freeze({

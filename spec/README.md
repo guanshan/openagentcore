@@ -40,7 +40,7 @@
 本代际对 design.md §4.1 中尚未展开的类型采用以下最小定义：
 
 - `UserInput` 是带字符串 `content` 的封闭对象。
-- `ActionDescriptor` 保留为 JSON 对象。L0 仍把 `ContextAssembly` 作为开放 JSON 对象；TypeScript 参考实现定义了可检查的 messages、tools、阶段、segment、来源、token 与能力降级字段。
+- `ActionDescriptor` 在 L0 仍保留为可扩展 JSON 对象，以兼容旧事件。TypeScript 参考实现新写入的工具审批描述包含 tool、args、permission，可选的规范绝对读/写路径集合（含 workspace root）以及命令文本/解析后的可执行名；Permission Strategy 与恢复流程消费同一份持久化描述。L0 仍把 `ContextAssembly` 作为开放 JSON 对象；TypeScript 参考实现定义了可检查的 messages、tools、阶段、segment、来源、token 与能力降级字段。
 - `TextOrToolDelta` 分为 `{ kind: "text", text }` 与 `{ kind: "tool", toolCallDelta }`；工具增量暂保留为任意 JSON 值。
 - `ToolResult`、工具 `args` 是任意 JSON 值，不接受 `undefined`、函数等非 JSON 数据。
 - `EventRange` 使用包含端点的 `fromSeq` 与 `toSeq`，并满足 `0 <= fromSeq <= toSeq < compaction event seq`。跨字段大小关系由投影语义校验。
@@ -146,3 +146,7 @@ Compaction 只折叠消息投影，不删除 EventLog 中的原始事件。摘�
 | A2A                                | v1.0                                                                    |
 | AG-UI                              | 跟随主线，`oac.*` 扩展事件 Schema 在本目录定义                          |
 | OpenAI-compatible Chat Completions | M1-1 公共 SSE 子集（2026-08-11）；契约见 ADR 0007 与 Adapter 一致性测试 |
+
+## Port conformance 结果
+
+`oac conformance` 的机器可读结果写入 [`conformance-results.json`](conformance-results.json)，`schemaVersion` 独立于 L0 事件 Schema。它按 Port / Adapter / case 记录 `passed`、`failed` 或 `skipped`；`skipped` 表示未认证通过，并必须携带缺失前置条件的原因。能力矩阵由同一内存结果自动生成，不另设手工真相源。

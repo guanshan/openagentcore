@@ -119,7 +119,30 @@ export type TextOrToolDelta = TextDelta | ToolDelta;
 
 export type ToolResult = JsonValue;
 
-export type ActionDescriptor = JsonObject;
+export interface ActionPathDescriptor extends JsonObject {
+  /** Canonical absolute workspace root used to interpret relative policy globs. */
+  readonly root: string;
+  /** Canonical absolute paths read by the action. */
+  readonly read: readonly string[];
+  /** Canonical absolute paths written by the action. */
+  readonly write: readonly string[];
+}
+
+export interface ActionCommandDescriptor extends JsonObject {
+  /** The exact command text supplied by the caller. */
+  readonly text: string;
+  /** The executable parsed from the first shell command segment. */
+  readonly executable: string;
+}
+
+export interface ActionDescriptor extends JsonObject {
+  /** Required on newly emitted tool permission events; optional for pre-M2 event compatibility. */
+  readonly tool?: string;
+  readonly args?: JsonValue;
+  readonly permission?: JsonObject;
+  readonly paths?: ActionPathDescriptor;
+  readonly command?: ActionCommandDescriptor;
+}
 
 export interface EventRange {
   readonly fromSeq: number;
