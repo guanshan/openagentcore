@@ -4,6 +4,7 @@ import type {
   SandboxExecRequest,
   SandboxPort,
   StorePort,
+  TracePort,
 } from '@openagentcore/kernel';
 
 export type ConformancePort = 'model' | 'sandbox' | 'store' | 'trace';
@@ -51,4 +52,9 @@ export interface StoreConformanceAdapter {
   create(): Promise<StorePort>;
   availability?(): Promise<{ readonly available: boolean; readonly reason: string }>;
   dispose?(): Promise<void>;
+}
+
+export interface TraceConformanceAdapter {
+  readonly name: string;
+  create(): TracePort;
 }

@@ -6,10 +6,12 @@ import { join } from 'node:path';
 import {
   InMemoryEventLog,
   LocalProcessSandbox,
+  NoopTracer,
   ScriptedModelPort,
   type ModelPort,
   type SandboxPort,
   type StorePort,
+  type TracePort,
 } from '@openagentcore/kernel';
 import { SqliteStore } from '@openagentcore/standard';
 import { describe, expect, it } from 'vitest';
@@ -18,6 +20,7 @@ import { runModelConformance } from './model.js';
 import { createConformanceReport, formatCapabilityMatrix, formatHumanReport } from './report.js';
 import { runSandboxConformance } from './sandbox.js';
 import { runStoreConformance } from './store.js';
+import { runTraceConformance } from './trace.js';
 
 describe('Port conformance suites', () => {
   it('passes honest model and local sandbox adapters', async () => {
@@ -118,6 +121,26 @@ describe('Port conformance suites', () => {
     );
   });
 
+  it('passes Noop trace conformance and marks dishonest content capture red', async () => {
+    const noop = await runTraceConformance({
+      name: 'noop-trace',
+      create: () => new NoopTracer(),
+    });
+    const dishonest = await runTraceConformance({
+      name: 'dishonest-trace',
+      create: () => dishonestTrace(),
+    });
+
+    expect(noop.status).toBe('passed');
+    expect(dishonest.status).toBe('failed');
+    expect(dishonest.cases).toContainEqual(
+      expect.objectContaining({
+        name: 'capability declaration is structurally valid and honest',
+        status: 'failed',
+      }),
+    );
+  });
+
   it('formats human, JSON-backed matrix, and overall failure consistently', () => {
     const report = createConformanceReport([
       {
@@ -174,5 +197,14 @@ function dishonestStore(): StorePort {
         };
       },
     },
+  };
+}
+
+function dishonestTrace(): TracePort {
+  const noop = new NoopTracer();
+  return {
+    capabilities: { exporter: 'dishonest', contentCapture: true },
+    startSpan: () => noop.startSpan(),
+    recordMetric: () => noop.recordMetric(),
   };
 }

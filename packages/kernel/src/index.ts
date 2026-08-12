@@ -126,6 +126,18 @@ export type {
   StoreReadConsistency,
   StoreSequenceSemantics,
 } from './ports/store.js';
+export { NoopTracer } from './ports/trace.js';
+export type {
+  TraceAttributeValue,
+  TraceAttributes,
+  TraceCapabilities,
+  TraceMetric,
+  TracePort,
+  TraceSpan,
+  TraceSpanContext,
+  TraceSpanEndOptions,
+  TraceSpanOptions,
+} from './ports/trace.js';
 export type {
   FinishModelChunk,
   ModelCapabilities,
@@ -278,3 +290,4 @@ export type {
   StrategySelection,
   TurnResult,
 } from './loop/agent-loop.js';
+export type { TraceErrorHandler } from './loop/trace.js';

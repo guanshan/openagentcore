@@ -14,6 +14,7 @@ import type {
 } from '../events/types.js';
 import type { ModelPort, ModelRequest } from '../ports/model.js';
 import type { SandboxCapabilityRequest, SandboxPort } from '../ports/sandbox.js';
+import { NoopTracer, type TracePort } from '../ports/trace.js';
 import { createDefaultPromptRegistry } from '../prompts/builtins.js';
 import type { PromptRegistry } from '../prompts/registry.js';
 import {
@@ -66,6 +67,7 @@ import {
   projectSessionState,
   type SessionReplayState,
 } from './session-state.js';
+import { AgentTraceLifecycle, type TraceErrorHandler } from './trace.js';
 
 export { PROMPTED_TOOL_CALL_PREFIX, PROMPTED_TOOL_RESULT_PREFIX } from './context.js';
 export { UnknownToolResultError } from './recovery.js';
@@ -99,6 +101,8 @@ export interface AgentLoopOptions {
   readonly sandbox?: SandboxPort;
   /** Preferred capabilities degrade explicitly into model.request.capabilityDowngrades. */
   readonly sandboxCapabilities?: SandboxCapabilityRequest;
+  readonly trace?: TracePort;
+  readonly onTraceError?: TraceErrorHandler;
 }
 
 export interface RunTurnOptions {
@@ -163,6 +167,7 @@ export class AgentLoop {
   readonly prompts: PromptRegistry;
   readonly middleware: MiddlewareRegistry;
   readonly sandbox: SandboxPort | undefined;
+  readonly trace: TracePort;
 
   readonly #selections: AgentLoopStrategySelections;
   readonly #now: () => string;
@@ -171,6 +176,7 @@ export class AgentLoop {
   readonly #sandboxCapabilities: SandboxCapabilityRequest;
   readonly #steering: UserInput[] = [];
   readonly #costAccounting = createCostAccountingMiddleware();
+  readonly #traceLifecycle: AgentTraceLifecycle;
 
   #selected: SelectedStrategies | undefined;
   #state: SessionReplayState = createSessionReplayState();
@@ -187,6 +193,8 @@ export class AgentLoop {
     this.prompts = options.prompts ?? createDefaultPromptRegistry();
     this.middleware = new MiddlewareRegistry().use('event', this.#costAccounting);
     this.sandbox = options.sandbox;
+    this.trace = options.trace ?? new NoopTracer();
+    this.#traceLifecycle = new AgentTraceLifecycle(this.trace, options.onTraceError);
     this.#selections = options.strategies ?? {};
     this.#now = options.now ?? (() => new Date().toISOString());
     this.#sleep = options.sleep ?? abortableDelay;
@@ -511,6 +519,10 @@ export class AgentLoop {
       context.persisted = true;
       persistedSnapshot = candidate;
       this.#state = prospectiveState;
+      this.#traceLifecycle.observe(
+        candidate,
+        candidate.type === 'turn.finished' ? this.strategyMetrics() : [],
+      );
     });
     if (persistedEvent === undefined || context.persistedEvent === undefined) {
       throw new AgentLoopInvariantError(`Event middleware suppressed required ${event.type}.`);

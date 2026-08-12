@@ -3,14 +3,21 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { LocalProcessSandbox } from '@openagentcore/kernel';
-import { DockerSandbox, MySqlStore, RedisStore, SqliteStore } from '@openagentcore/standard';
+import { LocalProcessSandbox, NoopTracer } from '@openagentcore/kernel';
+import {
+  DockerSandbox,
+  MySqlStore,
+  OtlpTracePort,
+  RedisStore,
+  SqliteStore,
+} from '@openagentcore/standard';
 import { OpenAICompatibleModel } from '@openagentcore/standard/model';
 
 import type {
   ModelConformanceAdapter,
   SandboxConformanceAdapter,
   StoreConformanceAdapter,
+  TraceConformanceAdapter,
 } from './types.js';
 
 export function defaultModelAdapters(): readonly ModelConformanceAdapter[] {
@@ -82,6 +89,23 @@ export function defaultStoreAdapters(): readonly StoreConformanceAdapter[] {
         if (redisUrl === undefined) throw new Error('OAC_REDIS_URL is unavailable.');
         return RedisStore.create({ url: redisUrl, keyPrefix: redisPrefix });
       },
+    },
+  ];
+}
+
+export function defaultTraceAdapters(): readonly TraceConformanceAdapter[] {
+  return [
+    {
+      name: '@openagentcore/kernel/noop',
+      create: () => new NoopTracer(),
+    },
+    {
+      name: '@openagentcore/standard/otlp-http',
+      create: () =>
+        new OtlpTracePort({
+          endpoint: 'http://conformance.invalid',
+          fetch: async () => new Response(null, { status: 200 }),
+        }),
     },
   ];
 }

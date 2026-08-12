@@ -16,6 +16,7 @@ import type {
   PromptOverrideMode,
   StrategyRegistry,
   StrategySelection,
+  TracePort,
   Tool,
   ToolRegistrationOptions,
 } from '@openagentcore/kernel';
@@ -62,6 +63,7 @@ export interface CreateAgentOptions extends AgentConfigInput {
   /** A concrete Port is an explicit-code override and bypasses standard model construction. */
   readonly modelPort?: ModelPort;
   readonly eventLog?: EventLog;
+  readonly trace?: TracePort;
 }
 
 export interface PromptOverrideOptions {
@@ -165,6 +167,7 @@ const CREATE_AGENT_KEYS = new Set([
   'environment',
   'modelPort',
   'eventLog',
+  'trace',
   'identity',
   'model',
 ]);
@@ -192,6 +195,7 @@ export class AgentBuilder {
 
   #modelPort: ModelPort | undefined;
   #eventLog: EventLog | undefined;
+  #tracePort: TracePort | undefined;
   #strategyRegistry: StrategyRegistry | undefined;
 
   private constructor(preset: AgentPreset) {
@@ -233,6 +237,11 @@ export class AgentBuilder {
 
   eventLog(eventLog: EventLog): this {
     this.#eventLog = eventLog;
+    return this;
+  }
+
+  trace(trace: TracePort): this {
+    this.#tracePort = trace;
     return this;
   }
 
@@ -313,6 +322,7 @@ export class AgentBuilder {
     const identity = resolveIdentityConfig(layered);
     const eventLog = this.#eventLog ?? new InMemoryEventLog(identity);
     validateEventLog(eventLog);
+    if (this.#tracePort !== undefined) validateTracePort(this.#tracePort);
 
     const model = this.#modelPort ?? createConfiguredModel(resolveModelConfig(layered), layered);
     validateModelPort(model);
@@ -393,6 +403,7 @@ export class AgentBuilder {
       prompts,
       strategies: { ...this.#strategySelections },
       strategyRegistry,
+      ...(this.#tracePort === undefined ? {} : { trace: this.#tracePort }),
     });
     for (const install of this.#middlewareInstallers) {
       install(loop);
@@ -448,6 +459,9 @@ export function createAgent(options: CreateAgentOptions = {}): AgentLoop {
   }
   if (options.eventLog !== undefined) {
     builder.eventLog(options.eventLog);
+  }
+  if (options.trace !== undefined) {
+    builder.trace(options.trace);
   }
   return builder.build();
 }
@@ -922,6 +936,40 @@ function validateEventLog(eventLog: EventLog): void {
     if (typeof eventLog[method] !== 'function') {
       throw configurationError('explicit-code', `eventLog.${method}`, 'expected a function.');
     }
+  }
+}
+
+function validateTracePort(trace: TracePort): void {
+  if (!isObjectRecord(trace)) {
+    throw configurationError('explicit-code', 'trace', 'expected a TracePort object.');
+  }
+  if (typeof trace['startSpan'] !== 'function') {
+    throw configurationError('explicit-code', 'trace.startSpan', 'expected a function.');
+  }
+  if (typeof trace['recordMetric'] !== 'function') {
+    throw configurationError('explicit-code', 'trace.recordMetric', 'expected a function.');
+  }
+  const capabilities = requireRecord(trace['capabilities'], 'explicit-code', 'trace.capabilities');
+  if (typeof capabilities['exporter'] !== 'string' || capabilities['exporter'].length === 0) {
+    throw configurationError(
+      'explicit-code',
+      'trace.capabilities.exporter',
+      'expected a non-empty string.',
+    );
+  }
+  if (typeof capabilities['contentCapture'] !== 'boolean') {
+    throw configurationError(
+      'explicit-code',
+      'trace.capabilities.contentCapture',
+      'expected a boolean.',
+    );
+  }
+  if (capabilities['contentCapture'] && typeof trace['serializeContent'] !== 'function') {
+    throw configurationError(
+      'explicit-code',
+      'trace.serializeContent',
+      'required when content capture is enabled.',
+    );
   }
 }
 
