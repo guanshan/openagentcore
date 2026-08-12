@@ -9,7 +9,7 @@
     "rootDir": "src",
     "sourceMap": true,
     "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "types": []
+    "types": ["node"]
   },
   "exclude": ["src/**/*.test.ts", "src/**/*.test-support.ts"]
 }

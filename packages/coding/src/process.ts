@@ -1,5 +1,3 @@
-import { spawn } from 'node:child_process';
-
 import type {
   JsonObject,
   JsonValue,
@@ -8,6 +6,11 @@ import type {
   ToolExecutionRequest,
   ToolExecutionResult,
   ToolPermissionDescriptor,
+} from '@openagentcore/kernel';
+import {
+  LocalProcessSandbox,
+  SANDBOX_WORKSPACE_PATH,
+  type SandboxPort,
 } from '@openagentcore/kernel';
 
 import {
@@ -35,12 +38,13 @@ export interface ProcessResult extends JsonObject {
   readonly stderr: string;
   readonly exitCode: number | null;
   readonly signal: string | null;
+  readonly outputTruncated: boolean;
 }
 
 const executePermission: ToolPermissionDescriptor = Object.freeze({
   kind: 'process-execute',
   description:
-    'Executes a local command inside the repository after fixed dangerous-command guards.',
+    'Executes a sandbox command inside the repository after fixed dangerous-command guards.',
 });
 
 export class DangerousCommandError extends Error {
@@ -66,11 +70,16 @@ export class RunCommandTool implements Tool {
   });
   readonly permission = executePermission;
   readonly #workspace: RepositoryWorkspace;
+  readonly #sandbox: SandboxPort;
   readonly #maxOutputBytes: number;
 
-  constructor(workspace: RepositoryWorkspace, options: { readonly maxOutputBytes?: number } = {}) {
+  constructor(
+    workspace: RepositoryWorkspace,
+    options: { readonly maxOutputBytes?: number; readonly sandbox?: SandboxPort } = {},
+  ) {
     this.#workspace = workspace;
     this.#maxOutputBytes = options.maxOutputBytes ?? 1_000_000;
+    this.#sandbox = options.sandbox ?? new LocalProcessSandbox({ root: workspace.root });
   }
 
   async describeAction(argsValue: JsonValue): Promise<ToolActionDetails> {
@@ -103,9 +112,9 @@ export class RunCommandTool implements Tool {
     const requestedCwd = optionalStringInput(this.name, args, 'cwd');
     const cwd =
       requestedCwd === undefined
-        ? this.#workspace.root
-        : await this.#workspace.resolveExisting(requestedCwd);
-    const result = await runProcess(
+        ? SANDBOX_WORKSPACE_PATH
+        : await this.#workspace.sandboxPath(requestedCwd);
+    const result = await this.#sandbox.exec(
       {
         command,
         cwd,
@@ -199,61 +208,31 @@ export function runProcess(
   options: ProcessRunOptions,
   signal: AbortSignal,
 ): Promise<ProcessResult> {
-  signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    const child = spawn(options.command, options.args ?? [], {
-      cwd: options.cwd,
-      shell: options.shell ?? false,
-      env:
-        options.environment === undefined
-          ? process.env
-          : { ...process.env, ...options.environment },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const maxOutputBytes = options.maxOutputBytes ?? 1_000_000;
-    let stdout = '';
-    let stderr = '';
-    let settled = false;
-
-    const append = (stream: 'stdout' | 'stderr', chunk: Buffer): void => {
-      const value = chunk.toString('utf8');
-      if (stream === 'stdout') {
-        stdout += value;
-      } else {
-        stderr += value;
-      }
-      if (Buffer.byteLength(stdout) + Buffer.byteLength(stderr) > maxOutputBytes) {
-        child.kill('SIGTERM');
-      }
-    };
-    child.stdout.on('data', (chunk: Buffer) => append('stdout', chunk));
-    child.stderr.on('data', (chunk: Buffer) => append('stderr', chunk));
-
-    const onAbort = (): void => {
-      child.kill('SIGTERM');
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-    child.once('error', (error) => {
-      settled = true;
-      signal.removeEventListener('abort', onAbort);
-      reject(error);
-    });
-    child.once('close', (exitCode, childSignal) => {
-      if (settled) {
-        return;
-      }
-      signal.removeEventListener('abort', onAbort);
-      if (signal.aborted) {
-        reject(signal.reason ?? new Error('Command aborted.'));
-        return;
-      }
-      resolve({
-        command: [options.command, ...(options.args ?? [])].join(' '),
-        stdout,
-        stderr,
-        exitCode,
-        signal: childSignal,
-      });
-    });
+  const sandbox = new LocalProcessSandbox({
+    root: options.cwd,
+    ...(options.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes }),
   });
+  return sandbox.exec(
+    {
+      command: options.command,
+      ...(options.args === undefined ? {} : { args: options.args }),
+      cwd: SANDBOX_WORKSPACE_PATH,
+      ...(options.shell === undefined ? {} : { shell: options.shell }),
+      ...(options.maxOutputBytes === undefined ? {} : { maxOutputBytes: options.maxOutputBytes }),
+      ...(options.environment === undefined
+        ? {}
+        : { environment: definedEnvironment(options.environment) }),
+    },
+    signal,
+  );
+}
+
+export function definedEnvironment(
+  environment: Readonly<Record<string, string | undefined>>,
+): Readonly<Record<string, string>> {
+  return Object.fromEntries(
+    Object.entries(environment).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
 }

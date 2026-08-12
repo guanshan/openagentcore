@@ -15,6 +15,10 @@
     "./model": {
       "types": "./dist/model/index.d.ts",
       "import": "./dist/model/index.js"
+    },
+    "./sandbox": {
+      "types": "./dist/sandbox/index.d.ts",
+      "import": "./dist/sandbox/index.js"
     }
   },
   "files": [

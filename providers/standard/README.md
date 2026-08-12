@@ -104,7 +104,20 @@ const agent = AgentBuilder.fromPreset('oss-local')
 | `OAC_MODEL_MAX_CONTEXT`       | `model.capabilities.maxContext`       |
 | `OAC_MODEL_VISION`            | `model.capabilities.vision`           |
 
-当前 `oss-local` 诚实装配内存 EventLog、进程内 ToolRegistry、默认 Strategy/Prompt 与 OpenAI-compatible ModelPort。Kernel 尚未定义通用 StorePort、SandboxPort 或 TracePort，因此 preset 不提供这些组件的空壳实现。
+当前 `oss-local` 诚实装配内存 EventLog、进程内 ToolRegistry、默认 Strategy/Prompt 与 OpenAI-compatible ModelPort。SandboxPort 已有独立的本地与 Docker 实现，但 preset 尚未注入 workspace root，因此不擅自构造；StorePort 与 TracePort 尚未定义。
+
+## Docker SandboxPort
+
+```ts
+import { DockerSandbox } from '@openagentcore/standard/sandbox';
+
+const sandbox = new DockerSandbox({
+  root: '/path/to/repository',
+  image: 'node:22-bookworm-slim',
+});
+```
+
+Docker adapter 通过宿主 `docker` CLI 启动一次性、禁网容器，把仓库 bind mount 到 Port 统一的 `/workspace`。它不会自动拉镜像；Docker Engine 或指定本地镜像不可用时，`availability()` 返回明确原因，conformance 将该 adapter 报告为 `skipped`，常规 CI 不以 Docker 可用为前提。此实现不声明 snapshot 能力。
 
 ## 离线与实机验证
 

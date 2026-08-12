@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, posix, relative, resolve } from 'node:path';
+
+import { SANDBOX_WORKSPACE_PATH } from '@openagentcore/kernel';
 
 export interface FileSnapshot {
   readonly path: string;
@@ -91,6 +93,14 @@ export class RepositoryWorkspace {
     const canonicalParent = await realpath(dirname(candidate));
     this.assertInside(canonicalParent, path);
     return resolve(canonicalParent, basename(candidate));
+  }
+
+  async sandboxPath(path: string): Promise<string> {
+    const absolute = await this.resolveExisting(path);
+    const suffix = relative(this.root, absolute).replaceAll('\\', '/');
+    return suffix.length === 0
+      ? SANDBOX_WORKSPACE_PATH
+      : posix.join(SANDBOX_WORKSPACE_PATH, suffix);
   }
 
   #assertRelative(path: string): boolean {

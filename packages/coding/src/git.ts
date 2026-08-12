@@ -7,9 +7,14 @@ import type {
   ToolExecutionResult,
   ToolPermissionDescriptor,
 } from '@openagentcore/kernel';
+import {
+  LocalProcessSandbox,
+  SANDBOX_WORKSPACE_PATH,
+  type SandboxPort,
+} from '@openagentcore/kernel';
 
 import { inputObject, stringArrayInput, stringInput, succeeded } from './contract.js';
-import { runProcess } from './process.js';
+import { definedEnvironment } from './process.js';
 import type { RepositoryWorkspace } from './workspace.js';
 
 const gitReadPermission: ToolPermissionDescriptor = Object.freeze({
@@ -24,6 +29,7 @@ const gitWritePermission: ToolPermissionDescriptor = Object.freeze({
 
 export interface GitToolOptions {
   readonly environment?: Readonly<Record<string, string | undefined>>;
+  readonly sandbox?: SandboxPort;
 }
 
 abstract class GitTool implements Tool {
@@ -32,10 +38,12 @@ abstract class GitTool implements Tool {
   abstract readonly permission: ToolPermissionDescriptor;
   protected readonly workspace: RepositoryWorkspace;
   readonly #environment: Readonly<Record<string, string | undefined>> | undefined;
+  readonly #sandbox: SandboxPort;
 
   constructor(workspace: RepositoryWorkspace, options: GitToolOptions = {}) {
     this.workspace = workspace;
     this.#environment = options.environment;
+    this.#sandbox = options.sandbox ?? new LocalProcessSandbox({ root: workspace.root });
   }
 
   abstract execute(
@@ -44,12 +52,14 @@ abstract class GitTool implements Tool {
   ): Promise<ToolExecutionResult>;
 
   protected async git(args: readonly string[], signal: AbortSignal) {
-    return runProcess(
+    return this.#sandbox.exec(
       {
         command: 'git',
         args,
-        cwd: this.workspace.root,
-        ...(this.#environment === undefined ? {} : { environment: this.#environment }),
+        cwd: SANDBOX_WORKSPACE_PATH,
+        ...(this.#environment === undefined
+          ? {}
+          : { environment: definedEnvironment(this.#environment) }),
       },
       signal,
     );

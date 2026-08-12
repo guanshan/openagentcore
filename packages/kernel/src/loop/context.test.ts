@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { InMemoryEventLog } from '../events/event-log.js';
 import { ScriptedModelPort } from '../ports/model.js';
+import type { SandboxCapabilityRequest, SandboxPort } from '../ports/sandbox.js';
 import { createDefaultPromptRegistry } from '../prompts/builtins.js';
 import { EchoTool, ResultFailingTool, ToolRegistry } from '../tools/tool.js';
 import { AgentLoop, PROMPTED_TOOL_CALL_PREFIX } from './agent-loop.js';
@@ -106,6 +107,38 @@ describe('AgentLoop context assembly', () => {
     expect(modelModes).toEqual(['dry-run', 'execute']);
   });
 
+  it('persists an honest sandbox capability downgrade in the model request event', async () => {
+    const model = new ScriptedModelPort([
+      [
+        { kind: 'text', text: 'No snapshot required.' },
+        { kind: 'finish', reason: 'stop' },
+      ],
+    ]);
+    const log = new InMemoryEventLog(identity('sandbox-downgrade'));
+    const sandbox = {
+      capabilities: { snapshot: false },
+      workspacePath: '/workspace',
+      fs: {},
+      exec: async () => {
+        throw new Error('not used');
+      },
+    } as unknown as SandboxPort;
+    const loop = createLoop(model, {
+      eventLog: log,
+      sandbox,
+      sandboxCapabilities: { snapshot: true },
+    });
+
+    await loop.runTurn({ content: 'Continue without snapshots.' });
+
+    expect(await readEvents(log)).toContainEqual(
+      expect.objectContaining({
+        type: 'model.request',
+        capabilityDowngrades: ['sandbox-snapshot:requested->unavailable'],
+      }),
+    );
+  });
+
   it('uses runtime overrides for the prompted protocol and failed-tool retry hint', async () => {
     const promptedInstruction = 'CUSTOM_PROMPTED_PROTOCOL';
     const retryInstruction = 'CUSTOM_FAILED_TOOL_RETRY_HINT';
@@ -152,6 +185,8 @@ interface LoopOptions {
   readonly eventLog?: InMemoryEventLog;
   readonly prompts?: ReturnType<typeof createDefaultPromptRegistry>;
   readonly tools?: ToolRegistry;
+  readonly sandbox?: SandboxPort;
+  readonly sandboxCapabilities?: SandboxCapabilityRequest;
 }
 
 function createLoop(model: ScriptedModelPort, options: LoopOptions = {}): AgentLoop {
@@ -160,6 +195,10 @@ function createLoop(model: ScriptedModelPort, options: LoopOptions = {}): AgentL
     model,
     ...(options.prompts === undefined ? {} : { prompts: options.prompts }),
     ...(options.tools === undefined ? {} : { tools: options.tools }),
+    ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
+    ...(options.sandboxCapabilities === undefined
+      ? {}
+      : { sandboxCapabilities: options.sandboxCapabilities }),
     now: () => timestamp,
     sleep: async (_delayMs, signal) => signal.throwIfAborted(),
   });
