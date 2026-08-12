@@ -19,13 +19,14 @@ const REQUEST: ModelRequest = {
 describe('TencentHunyuanModel', () => {
   it('uses the current TokenHub endpoint and documented hy3 capabilities', async () => {
     const credential = randomBytes(24).toString('base64url');
-    const fetch = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(
-          'data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
-          { status: 200, headers: { 'content-type': 'text/event-stream' } },
-        ),
-    );
+    const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      void _input;
+      void _init;
+      return new Response(
+        'data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    });
     const model = new TencentHunyuanModel({ apiKey: credential, fetch });
 
     const chunks = [];

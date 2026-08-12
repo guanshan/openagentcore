@@ -101,7 +101,9 @@ async function expectRejected(
     await operation;
   } catch (error) {
     if (error instanceof errorType) return;
-    throw new Error(`expected ${errorType.name}, received ${stableError(error)}`);
+    throw new Error(`expected ${errorType.name}, received ${stableError(error)}`, {
+      cause: error,
+    });
   }
   throw new Error(`expected ${errorType.name}, operation resolved`);
 }
