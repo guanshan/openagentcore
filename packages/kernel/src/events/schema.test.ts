@@ -115,7 +115,7 @@ describe('AgentEvent v0 schema', () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
-  it('covers all thirteen event variants with schema-valid fixtures', () => {
+  it('covers all fourteen event variants with schema-valid fixtures', () => {
     const complete = vectors.find((vector) => vector.fileName === 'valid-turn-tool.json');
     expect(complete).toBeDefined();
     if (complete === undefined) {
@@ -137,6 +137,7 @@ describe('AgentEvent v0 schema', () => {
         'tool.result',
         'permission.requested',
         'permission.resolved',
+        'credential.used',
         'compaction.applied',
         'checkpoint.created',
         'turn.finished',

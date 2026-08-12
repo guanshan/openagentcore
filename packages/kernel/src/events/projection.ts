@@ -207,6 +207,7 @@ function applyEventToEntries(entries: MessageProjectionEntry[], event: AgentEven
     case 'step.finished':
     case 'permission.requested':
     case 'permission.resolved':
+    case 'credential.used':
     case 'checkpoint.created':
     case 'turn.finished':
       return false;

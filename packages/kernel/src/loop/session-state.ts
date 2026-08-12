@@ -374,6 +374,18 @@ export function applyEventToSessionState(
       break;
     }
 
+    case 'credential.used': {
+      assertActiveStepAssociation(next, event.stepId, event);
+      const pending = next.pendingToolCalls.find((candidate) => candidate.callId === event.callId);
+      if (pending === undefined) {
+        fail(event, `credential use refers to no pending tool call ${event.callId}`);
+      }
+      if (pending.tool !== event.tool) {
+        fail(event, `credential tool ${event.tool} does not match ${pending.tool}`);
+      }
+      break;
+    }
+
     case 'turn.finished':
       if (next.activeTurn === undefined || next.activeTurn.turnId !== event.turnId) {
         fail(event, `turn ${event.turnId} does not match the active turn`);

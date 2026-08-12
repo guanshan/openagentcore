@@ -1,6 +1,7 @@
 import type { EventLog } from '../events/event-log.js';
 import type { ModelPort } from '../ports/model.js';
 import type { SandboxPort } from '../ports/sandbox.js';
+import type { VaultPort } from '../ports/vault.js';
 import type { PromptRegistrySnapshot } from '../prompts/registry.js';
 import type { ToolRegistry } from '../tools/tool.js';
 
@@ -11,6 +12,7 @@ export interface KernelPorts {
   readonly eventLog?: EventLog;
   readonly model?: ModelPort;
   readonly sandbox?: SandboxPort;
+  readonly vault?: VaultPort;
   readonly tools?: ToolRegistry;
   readonly prompts?: PromptRegistrySnapshot;
 }

@@ -17,6 +17,7 @@ export type AgentEventType =
   | 'tool.result'
   | 'permission.requested'
   | 'permission.resolved'
+  | 'credential.used'
   | 'compaction.applied'
   | 'checkpoint.created'
   | 'turn.finished';
@@ -248,6 +249,14 @@ export interface PermissionResolvedEvent extends BaseAgentEvent<'permission.reso
   readonly reason?: string;
 }
 
+export interface CredentialUsedEvent extends BaseAgentEvent<'credential.used'> {
+  readonly stepId: string;
+  readonly callId: string;
+  readonly tool: string;
+  readonly scope: string;
+  readonly attempt: number;
+}
+
 export interface CompactionAppliedEvent extends BaseAgentEvent<'compaction.applied'> {
   readonly summary: string;
   readonly dropped: EventRange;
@@ -275,6 +284,7 @@ export type AgentEvent =
   | ToolResultEvent
   | PermissionRequestedEvent
   | PermissionResolvedEvent
+  | CredentialUsedEvent
   | CompactionAppliedEvent
   | CheckpointCreatedEvent
   | TurnFinishedEvent;

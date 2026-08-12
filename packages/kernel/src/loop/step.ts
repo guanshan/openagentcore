@@ -22,11 +22,13 @@ import type {
 import type { Strategy, StrategyContext } from '../strategy/registry.js';
 import {
   describeToolAction,
+  executeToolPort,
   ToolContractError,
   type Tool,
   type ToolExecutionRequest,
   type ToolExecutionResult,
 } from '../tools/tool.js';
+import type { VaultPort } from '../ports/vault.js';
 import {
   assembleContext,
   contextDraftToModelRequest,
@@ -67,6 +69,7 @@ export type EmitAgentEvent = (
 ) => Promise<AgentEvent>;
 
 export interface StepRuntime extends ContextRuntime {
+  readonly vault?: VaultPort;
   readonly permission: Strategy<PermissionStrategyInput, PermissionStrategyOutput, unknown>;
   readonly retry: Strategy<RetryStrategyInput, RetryDecision, unknown>;
   readonly emit: EmitAgentEvent;
@@ -847,7 +850,22 @@ async function invokeTool(
     error: undefined,
   };
   await runtime.middleware.run('tool', context, async () => {
-    context.result = await context.tool.execute(context.request, signal);
+    context.result = await executeToolPort(context.tool, context.request, signal, {
+      ...(runtime.vault === undefined ? {} : { vault: runtime.vault }),
+      onCredentialUsed: async (usage, auditSignal) => {
+        await runtime.emit(
+          {
+            type: 'credential.used',
+            stepId,
+            callId: usage.callId,
+            tool: usage.tool,
+            scope: usage.scope.id,
+            attempt: usage.attempt,
+          },
+          auditSignal,
+        );
+      },
+    });
   });
   if (context.error !== undefined) {
     throw context.error;

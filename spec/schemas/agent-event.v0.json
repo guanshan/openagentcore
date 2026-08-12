@@ -13,6 +13,7 @@
     { "$ref": "#/$defs/toolResult" },
     { "$ref": "#/$defs/permissionRequested" },
     { "$ref": "#/$defs/permissionResolved" },
+    { "$ref": "#/$defs/credentialUsed" },
     { "$ref": "#/$defs/compactionApplied" },
     { "$ref": "#/$defs/checkpointCreated" },
     { "$ref": "#/$defs/turnFinished" }
@@ -340,6 +341,25 @@
             "stepId": { "$ref": "#/$defs/nonEmptyString" },
             "callId": { "$ref": "#/$defs/nonEmptyString" },
             "reason": { "$ref": "#/$defs/nonEmptyString" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "credentialUsed": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/baseEvent" },
+        {
+          "type": "object",
+          "required": ["stepId", "callId", "tool", "scope", "attempt"],
+          "properties": {
+            "type": { "const": "credential.used" },
+            "stepId": { "$ref": "#/$defs/nonEmptyString" },
+            "callId": { "$ref": "#/$defs/nonEmptyString" },
+            "tool": { "$ref": "#/$defs/nonEmptyString" },
+            "scope": { "$ref": "#/$defs/nonEmptyString" },
+            "attempt": { "type": "integer", "minimum": 1 }
           }
         }
       ],

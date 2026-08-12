@@ -56,6 +56,7 @@ export type {
   ModelUsage,
   PermissionRequestedEvent,
   PermissionResolvedEvent,
+  CredentialUsedEvent,
   StepFinishedEvent,
   StepStartedEvent,
   StopReason,
@@ -126,6 +127,24 @@ export type {
   StoreReadConsistency,
   StoreSequenceSemantics,
 } from './ports/store.js';
+export {
+  CredentialExpiredError,
+  CredentialReleasedError,
+  CredentialScopeError,
+  defineCredentialScope,
+  UnavailableVault,
+  VaultContractError,
+  VaultUnavailableError,
+} from './ports/vault.js';
+export type {
+  CredentialRequest,
+  CredentialResponse,
+  CredentialScope,
+  CredentialScopeOptions,
+  CredentialTarget,
+  ShortLivedCredential,
+  VaultPort,
+} from './ports/vault.js';
 export { NoopTracer } from './ports/trace.js';
 export type {
   TraceAttributeValue,
@@ -162,6 +181,7 @@ export type {
 
 export {
   describeToolAction,
+  executeToolPort,
   EchoTool,
   FailingTool,
   ResultFailingTool,
@@ -169,8 +189,11 @@ export {
   ToolContractError,
   ToolRegistry,
   ToolRegistryError,
+  withCredential,
 } from './tools/tool.js';
 export type {
+  CredentialToolPort,
+  CredentialUseAudit,
   Tool,
   ToolActionDetails,
   ToolExecutionRequest,
@@ -178,6 +201,7 @@ export type {
   ToolPermissionDescriptor,
   ToolPort,
   ToolRegistrationOptions,
+  ToolExecutionContext,
 } from './tools/tool.js';
 
 export { StrategyRegistry, StrategyRegistryError } from './strategy/registry.js';

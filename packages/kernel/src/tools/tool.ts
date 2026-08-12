@@ -5,6 +5,8 @@ import type {
   JsonObject,
   JsonValue,
 } from '../events/types.js';
+import type { CredentialScope, ShortLivedCredential, VaultPort } from '../ports/vault.js';
+import { UnavailableVault, VaultUnavailableError, defineCredentialScope } from '../ports/vault.js';
 
 export interface ToolPermissionDescriptor extends JsonObject {
   readonly kind: string;
@@ -38,6 +40,32 @@ export interface ToolActionDetails extends JsonObject {
 
 export type Tool = ToolPort;
 
+/** Tool shape accepted by withCredential(). The decorator turns it into a regular ToolPort. */
+export interface CredentialToolPort {
+  readonly name: string;
+  readonly inputSchema: JsonObject;
+  readonly permission: ToolPermissionDescriptor;
+  describeAction?(args: JsonValue, signal: AbortSignal): Promise<ToolActionDetails>;
+  execute(
+    request: ToolExecutionRequest,
+    credential: ShortLivedCredential,
+    signal: AbortSignal,
+  ): Promise<ToolExecutionResult>;
+}
+
+export interface CredentialUseAudit {
+  readonly scope: CredentialScope;
+  readonly tool: string;
+  readonly callId: string;
+  readonly attempt: number;
+  readonly expiresAt: string;
+}
+
+export interface ToolExecutionContext {
+  readonly vault?: VaultPort;
+  onCredentialUsed?(usage: CredentialUseAudit, signal: AbortSignal): Promise<void>;
+}
+
 export interface ToolRegistrationOptions {
   readonly groups?: readonly string[];
 }
@@ -56,6 +84,76 @@ export class ToolContractError extends Error {
     super(`Tool "${tool}" must return { outcome, result }, received ${detail}.`);
     this.name = 'ToolContractError';
     this.tool = tool;
+  }
+}
+
+interface CredentialToolBinding {
+  readonly scope: CredentialScope;
+  readonly tool: CredentialToolPort;
+}
+
+const credentialBindings = new WeakMap<Tool, CredentialToolBinding>();
+
+/**
+ * Decorates a credential-aware tool without retaining Vault or secret material on the tool
+ * object. The binding lives in a module-private WeakMap and is resolved only during execution.
+ */
+export function withCredential(scope: CredentialScope): (tool: CredentialToolPort) => Tool {
+  const safeScope = defineCredentialScope(scope.id, {
+    targets: scope.targets,
+    header: scope.header,
+    prefix: scope.prefix,
+  });
+  return (tool) => {
+    const decorated: Tool = Object.freeze({
+      name: tool.name,
+      inputSchema: structuredClone(tool.inputSchema),
+      permission: structuredClone(tool.permission),
+      ...(tool.describeAction === undefined
+        ? {}
+        : {
+            describeAction: (args: JsonValue, signal: AbortSignal) =>
+              tool.describeAction?.call(tool, args, signal) ?? Promise.resolve({}),
+          }),
+      execute: async () => {
+        throw new VaultUnavailableError(safeScope);
+      },
+    });
+    credentialBindings.set(decorated, { scope: safeScope, tool });
+    return decorated;
+  };
+}
+
+/** Kernel execution seam used by AgentLoop so the public ToolPort contract stays serializable. */
+export async function executeToolPort(
+  tool: Tool,
+  request: ToolExecutionRequest,
+  signal: AbortSignal,
+  context: ToolExecutionContext = {},
+): Promise<ToolExecutionResult> {
+  const binding = credentialBindings.get(tool);
+  if (binding === undefined) {
+    return tool.execute(request, signal);
+  }
+
+  signal.throwIfAborted();
+  const credential = await (context.vault ?? new UnavailableVault()).issue(binding.scope);
+  try {
+    signal.throwIfAborted();
+    await context.onCredentialUsed?.(
+      {
+        scope: binding.scope,
+        tool: tool.name,
+        callId: request.callId,
+        attempt: request.attempt,
+        expiresAt: credential.expiresAt,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return await binding.tool.execute(request, credential, signal);
+  } finally {
+    credential.release();
   }
 }
 
