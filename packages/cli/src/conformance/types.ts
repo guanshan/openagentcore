@@ -37,8 +37,10 @@ export interface ConformanceReport {
 
 export interface ModelConformanceAdapter {
   readonly name: string;
+  readonly capabilities?: Readonly<Record<string, boolean | number | string>>;
   create(): ModelPort;
   readonly request?: ModelRequest;
+  availability?(): Promise<{ readonly available: boolean; readonly reason: string }>;
 }
 
 export interface SandboxConformanceAdapter {
@@ -61,7 +63,9 @@ export interface StoreConformanceAdapter {
 
 export interface TraceConformanceAdapter {
   readonly name: string;
+  readonly capabilities?: Readonly<Record<string, boolean | number | string>>;
   create(): TracePort;
+  availability?(): Promise<{ readonly available: boolean; readonly reason: string }>;
 }
 
 export interface VaultConformanceInstance {

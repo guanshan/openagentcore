@@ -23,6 +23,10 @@ const defaultRequest = Object.freeze({
 export async function runModelConformance(
   adapter: ModelConformanceAdapter,
 ): Promise<ConformanceSuiteResult> {
+  const availability = await adapter.availability?.();
+  if (availability !== undefined && !availability.available) {
+    return skipped(adapter.name, adapter.capabilities ?? {}, availability.reason);
+  }
   const cases: ConformanceCaseResult[] = [];
   await runCase(cases, 'capability declaration is structurally valid', async () => {
     validateCapabilities(adapter.create());
@@ -92,6 +96,21 @@ export async function runModelConformance(
     capabilities: Object.freeze({ ...model.capabilities }),
     detail: summarizeCases(cases),
     cases: Object.freeze(cases),
+  });
+}
+
+function skipped(
+  adapter: string,
+  capabilities: Readonly<Record<string, boolean | number | string>>,
+  reason: string,
+): ConformanceSuiteResult {
+  return Object.freeze({
+    port: 'model',
+    adapter,
+    status: 'skipped',
+    capabilities: Object.freeze({ ...capabilities }),
+    detail: reason,
+    cases: Object.freeze([]),
   });
 }
 

@@ -19,6 +19,12 @@ import {
   writeEncryptedVaultFile,
 } from '@openagentcore/standard';
 import { OpenAICompatibleModel } from '@openagentcore/standard/model';
+import {
+  TENCENT_HY3_CAPABILITIES,
+  TencentAgentRuntimeSandbox,
+  TencentHunyuanModel,
+  createTencentApmTrace,
+} from '@openagentcore/tencent';
 
 import type {
   ModelConformanceAdapter,
@@ -41,10 +47,23 @@ export function defaultModelAdapters(): readonly ModelConformanceAdapter[] {
           fetch: async () => conformanceStream(),
         }),
     },
+    {
+      name: '@openagentcore/tencent/tokenhub-hy3',
+      capabilities: { ...TENCENT_HY3_CAPABILITIES },
+      availability: async () =>
+        environmentAvailability(['TENCENT_TOKENHUB_API_KEY'], 'Tencent TokenHub'),
+      create: () =>
+        new TencentHunyuanModel({
+          apiKey: requiredEnvironmentValue('TENCENT_TOKENHUB_API_KEY'),
+        }),
+    },
   ];
 }
 
 export function defaultSandboxAdapters(): readonly SandboxConformanceAdapter[] {
+  const apiKey = process.env['E2B_API_KEY'];
+  const domain = process.env['E2B_DOMAIN'];
+  const template = process.env['AGS_TEMPLATE'];
   return [
     {
       name: '@openagentcore/kernel/local-process',
@@ -59,6 +78,20 @@ export function defaultSandboxAdapters(): readonly SandboxConformanceAdapter[] {
         }
         return sandbox.availability(signal);
       },
+    },
+    {
+      name: '@openagentcore/tencent/agent-runtime',
+      create: () =>
+        new TencentAgentRuntimeSandbox({
+          ...(apiKey === undefined ? {} : { apiKey }),
+          ...(domain === undefined ? {} : { domain }),
+          ...(template === undefined ? {} : { template }),
+        }),
+      availability: async () =>
+        environmentAvailability(
+          ['E2B_API_KEY', 'E2B_DOMAIN', 'AGS_TEMPLATE'],
+          'Tencent Agent Runtime',
+        ),
     },
   ];
 }
@@ -116,6 +149,16 @@ export function defaultTraceAdapters(): readonly TraceConformanceAdapter[] {
         new OtlpTracePort({
           endpoint: 'http://conformance.invalid',
           fetch: async () => new Response(null, { status: 200 }),
+        }),
+    },
+    {
+      name: '@openagentcore/tencent/apm-otlp-http',
+      capabilities: { exporter: 'otlp-http', contentCapture: false },
+      availability: async () => environmentAvailability(['TENCENT_APM_ENDPOINT'], 'Tencent APM'),
+      create: () =>
+        createTencentApmTrace({
+          endpoint: process.env['TENCENT_APM_ENDPOINT'] ?? 'http://unavailable.invalid',
+          ...optionalAuthorization(process.env['TENCENT_APM_TOKEN']),
         }),
     },
   ];
@@ -228,6 +271,38 @@ async function availabilityProbe(
 
 function stableError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+function environmentAvailability(
+  variables: readonly string[],
+  service: string,
+): { readonly available: boolean; readonly reason: string } {
+  const missing = variables.filter((variable) => {
+    const value = process.env[variable];
+    return value === undefined || value.length === 0;
+  });
+  return missing.length === 0
+    ? { available: true, reason: 'available' }
+    : {
+        available: false,
+        reason: `${service} live verification is unverified; missing ${missing.join(', ')}.`,
+      };
+}
+
+function optionalAuthorization(value: string | undefined): {
+  readonly headers?: Readonly<Record<string, string>>;
+} {
+  return value === undefined || value.length === 0
+    ? {}
+    : { headers: Object.freeze({ Authorization: value }) };
+}
+
+function requiredEnvironmentValue(variable: string): string {
+  const value = process.env[variable];
+  if (value === undefined || value.length === 0) {
+    throw new Error(`Required environment variable ${variable} is unavailable.`);
+  }
+  return value;
 }
 
 function conformanceStream(): Response {

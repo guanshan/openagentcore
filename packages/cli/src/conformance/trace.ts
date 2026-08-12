@@ -9,6 +9,10 @@ import type {
 export async function runTraceConformance(
   adapter: TraceConformanceAdapter,
 ): Promise<ConformanceSuiteResult> {
+  const availability = await adapter.availability?.();
+  if (availability !== undefined && !availability.available) {
+    return skipped(adapter.name, adapter.capabilities ?? {}, availability.reason);
+  }
   const trace = adapter.create();
   const cases: ConformanceCaseResult[] = [];
   await runCase(cases, 'capability declaration is structurally valid and honest', async () => {
@@ -68,6 +72,21 @@ export async function runTraceConformance(
     capabilities: Object.freeze({ ...trace.capabilities }),
     detail: summarizeCases(cases),
     cases: Object.freeze(cases),
+  });
+}
+
+function skipped(
+  adapter: string,
+  capabilities: Readonly<Record<string, boolean | number | string>>,
+  reason: string,
+): ConformanceSuiteResult {
+  return Object.freeze({
+    port: 'trace',
+    adapter,
+    status: 'skipped',
+    capabilities: Object.freeze({ ...capabilities }),
+    detail: reason,
+    cases: Object.freeze([]),
   });
 }
 

@@ -77,6 +77,24 @@ describe('Port conformance suites', () => {
     );
   });
 
+  it('does not label unavailable live model and trace capabilities as passed', async () => {
+    const model = await runModelConformance({
+      name: 'live-model',
+      capabilities: { streaming: true },
+      availability: async () => ({ available: false, reason: 'credential unavailable' }),
+      create: () => new ScriptedModelPort([]),
+    });
+    const trace = await runTraceConformance({
+      name: 'live-trace',
+      capabilities: { exporter: 'otlp-http' },
+      availability: async () => ({ available: false, reason: 'endpoint unavailable' }),
+      create: () => new NoopTracer(),
+    });
+
+    expect(model).toMatchObject({ status: 'skipped', detail: 'credential unavailable' });
+    expect(trace).toMatchObject({ status: 'skipped', detail: 'endpoint unavailable' });
+  });
+
   it('marks a dishonest snapshot declaration red and keeps unavailable adapters skipped', async () => {
     const dishonest = await runSandboxConformance({
       name: 'dishonest-sandbox',
